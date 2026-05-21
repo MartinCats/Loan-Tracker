@@ -8,8 +8,8 @@ export type PaymentHistory = {
   expectedAmount: number;
   unpaidInterestCreated: number;
   creditCreated: number;
-  paymentDate: string;
-  dueCycleDate: string;
-  note?: string;
+  paymentDate: string | null;
+  dueCycleDate: string | null;
+  note?: string | null;
   createdAt: string;
 };

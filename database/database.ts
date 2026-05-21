@@ -4,12 +4,22 @@ import { schemaStatements } from "@/database/schema";
 
 const databaseName = "personal-loan-tracker.db";
 
-export const database = SQLite.openDatabaseSync(databaseName);
+let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
-export function initializeDatabase() {
-  database.withTransactionSync(() => {
-    for (const statement of schemaStatements) {
-      database.execSync(statement);
-    }
-  });
+export function getDatabase() {
+  if (!databasePromise) {
+    databasePromise = SQLite.openDatabaseAsync(databaseName);
+  }
+
+  return databasePromise;
+}
+
+export async function initializeDatabase() {
+  const database = await getDatabase();
+
+  await database.execAsync("PRAGMA foreign_keys = ON;");
+
+  for (const statement of schemaStatements) {
+    await database.execAsync(statement);
+  }
 }

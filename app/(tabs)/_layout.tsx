@@ -10,11 +10,21 @@ export default function TabLayout() {
         headerStyle: { backgroundColor: theme.colors.background },
         headerTintColor: theme.colors.text,
         tabBarStyle: {
-          backgroundColor: theme.colors.surface,
-          borderTopColor: theme.colors.border
+          height: 72,
+          paddingTop: 8,
+          paddingBottom: 10,
+          backgroundColor: "rgba(13, 20, 29, 0.94)",
+          borderTopColor: theme.colors.borderSoft
         },
         tabBarActiveTintColor: theme.colors.accent,
-        tabBarInactiveTintColor: theme.colors.muted
+        tabBarInactiveTintColor: theme.colors.mutedSoft,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: "500"
+        },
+        tabBarItemStyle: {
+          paddingVertical: 2
+        }
       }}
     >
       <Tabs.Screen

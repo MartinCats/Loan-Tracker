@@ -89,17 +89,17 @@ function getCountdownText(loan: MockFocusLoan) {
 
 export default function DashboardScreen() {
   return (
-    <View className="flex-1 bg-background">
-      <View className="absolute left-0 right-0 top-0 h-64 bg-auraPurple opacity-35" />
-      <View className="absolute left-0 right-0 top-48 h-64 bg-auraPurple opacity-18" />
-      <View className="absolute left-0 right-0 top-96 h-72 bg-auraBlue opacity-16" />
+      <View className="flex-1 bg-background">
+      <View className="absolute left-0 right-0 top-0 h-72 bg-auraPurple opacity-30" />
+      <View className="absolute left-0 right-0 top-64 h-80 bg-auraMint opacity-10" />
+      <View className="absolute left-0 right-0 bottom-0 h-72 bg-auraBlue opacity-10" />
 
       <ScrollView
         className="flex-1"
-        contentContainerClassName="gap-8 px-5 pb-12 pt-8"
+        contentContainerClassName="gap-8 px-5 pb-14 pt-8"
         showsVerticalScrollIndicator={false}
       >
-        <Animated.View entering={FadeInUp.duration(450).springify()}>
+        <Animated.View entering={FadeInUp.duration(380)}>
           <DashboardHeader
             title="Dashboard"
             subtitle={`${focusLoans.length} borrowers need attention`}
@@ -107,29 +107,32 @@ export default function DashboardScreen() {
         </Animated.View>
 
         <Animated.View
-          entering={FadeInUp.delay(80).duration(450).springify()}
-          className="gap-3.5"
+          entering={FadeInUp.delay(70).duration(380)}
+          className="gap-3"
         >
-          <View className="flex-row gap-3.5">
+          <View className="flex-row gap-3">
             <SummaryCard
               label="Profit received"
               value={formatCurrency(mockSummary.accumulatedProfit)}
               accent="mint"
+              emphasis="primary"
             />
             <SummaryCard
               label="Principal active"
               value={formatCurrency(mockSummary.activePrincipal)}
               accent="gold"
+              emphasis="secondary"
             />
           </View>
           <SummaryCard
             label="Expected monthly interest"
             value={formatCurrency(mockSummary.expectedMonthlyInterest)}
             accent="cyan"
+            emphasis="quiet"
           />
         </Animated.View>
 
-        <View className="gap-4">
+        <View className="gap-4 pt-1">
           <View className="flex-row items-end justify-between">
             <View className="gap-1">
               <Text className="text-[26px] font-semibold leading-8 text-white">Focus</Text>
@@ -142,7 +145,7 @@ export default function DashboardScreen() {
             focusLoans.map((loan, index) => (
               <Animated.View
                 key={loan.id}
-                entering={FadeInUp.delay(140 + index * 70).duration(420).springify()}
+                entering={FadeInUp.delay(130 + index * 55).duration(360)}
               >
                 <LoanFocusCard
                   borrowerName={loan.borrowerName}

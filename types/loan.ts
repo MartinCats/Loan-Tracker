@@ -8,7 +8,6 @@ export type Loan = {
   principal: number;
   interestRate: number;
   paymentCycle: PaymentCycle;
-  originalDueDay: number | null;
   currentDueDate: string;
   unpaidInterest: number;
   creditBalance: number;
@@ -16,4 +15,5 @@ export type Loan = {
   status: LoanStatus;
   createdAt: string;
   updatedAt: string;
+  closedAt?: string | null;
 };
