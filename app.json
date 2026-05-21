@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Personal Loan Tracker",
+    "slug": "personal-loan-tracker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "personal-loan-tracker",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": false
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-asset"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
