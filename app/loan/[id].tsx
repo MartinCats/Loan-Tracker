@@ -2,6 +2,7 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { LoanHeroCard } from "@/components/loan/LoanHeroCard";
 import { LoanOverviewCard } from "@/components/loan/LoanOverviewCard";
@@ -110,6 +111,7 @@ function getTimelineMeta(type: PaymentHistoryType) {
 }
 
 export default function LoanDetailScreen() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const loanId = id ?? "";
   const {
@@ -238,7 +240,11 @@ export default function LoanDetailScreen() {
 
       <ScrollView
         className="flex-1"
-        contentContainerClassName="gap-7 px-5 pb-12 pt-6"
+        contentContainerClassName="gap-7 px-5"
+        contentContainerStyle={{
+          paddingTop: insets.top + 16,
+          paddingBottom: insets.bottom + 48
+        }}
         showsVerticalScrollIndicator={false}
       >
         <Animated.View entering={FadeInUp.duration(360)}>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { LoanFocusCard } from "@/components/dashboard/LoanFocusCard";
@@ -99,6 +100,7 @@ function toDashboardLoan(loan: Loan): DashboardLoan {
 }
 
 export default function DashboardScreen() {
+  const insets = useSafeAreaInsets();
   const {
     activeLoans,
     createLoan,
@@ -221,11 +223,15 @@ export default function DashboardScreen() {
 
       <ScrollView
         className="flex-1"
-        contentContainerClassName="gap-8 px-5 pb-14 pt-8"
+        contentContainerClassName="gap-8 px-5"
+        contentContainerStyle={{
+          paddingTop: insets.top + 16,
+          paddingBottom: insets.bottom + 104
+        }}
         showsVerticalScrollIndicator={false}
       >
         <Animated.View entering={FadeInUp.duration(380)}>
-          <View className="gap-5">
+          <View className="gap-4">
             <DashboardHeader
               title="Dashboard"
               subtitle={
@@ -234,13 +240,15 @@ export default function DashboardScreen() {
                   : "No active loans yet"
               }
             />
-            <Pressable
-              accessibilityRole="button"
-              onPress={openAddLoan}
-              className="self-start rounded-full bg-mint px-5 py-3"
-            >
-              <Text className="text-[14px] font-semibold text-background">Add Loan</Text>
-            </Pressable>
+            {hasRealLoans ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={openAddLoan}
+                className="self-start rounded-full bg-mint px-5 py-3"
+              >
+                <Text className="text-[14px] font-semibold text-background">Add Loan</Text>
+              </Pressable>
+            ) : null}
           </View>
         </Animated.View>
 
