@@ -7,15 +7,44 @@ import {
   deleteLoan as deleteLoanInRepository,
   getActiveLoans,
   getArchivedLoans,
+  getLoanById,
   updateLoan as updateLoanInRepository,
   type CreateLoanInput,
   type UpdateLoanInput
 } from "@/database/loanRepository";
+import {
+  createPaymentHistory,
+  getPaymentHistoriesByLoanId
+} from "@/database/paymentHistoryRepository";
+import {
+  applyPaymentToLoan,
+  calculateAmountDue,
+  calculateExpectedInterest,
+  type AmountDueResult,
+  type ApplyPaymentResult
+} from "@/services/loanCalculator";
 import type { Loan } from "@/types/loan";
+import type { PaymentHistory, PaymentHistoryType } from "@/types/payment";
+
+export type ReceivePaymentInput = {
+  loanId: string;
+  paidAmount: number;
+  note?: string;
+  paymentDate?: string;
+};
+
+export type ReceivePaymentResult = {
+  loan: Loan;
+  payment: PaymentHistory;
+  calculation: ApplyPaymentResult;
+};
 
 type LoanState = {
   activeLoans: Loan[];
   archivedLoans: Loan[];
+  selectedLoan: Loan | null;
+  selectedPaymentHistories: PaymentHistory[];
+  selectedPaymentQuote: AmountDueResult | null;
   isInitialized: boolean;
   isLoading: boolean;
   error: string | null;
@@ -23,16 +52,22 @@ type LoanState = {
   loadActiveLoans: () => Promise<void>;
   loadArchivedLoans: () => Promise<void>;
   loadLoans: () => Promise<void>;
+  loadLoanDetail: (id: string) => Promise<Loan | null>;
+  getPaymentQuote: (loanId: string) => Promise<AmountDueResult>;
   createLoan: (input: CreateLoanInput) => Promise<Loan>;
   updateLoan: (input: UpdateLoanInput) => Promise<Loan>;
   closeLoan: (id: string, closedAt?: string) => Promise<Loan>;
   deleteLoan: (id: string) => Promise<void>;
+  receivePayment: (input: ReceivePaymentInput) => Promise<ReceivePaymentResult>;
   clearError: () => void;
 };
 
 export const useLoanStore = create<LoanState>((set) => ({
   activeLoans: [],
   archivedLoans: [],
+  selectedLoan: null,
+  selectedPaymentHistories: [],
+  selectedPaymentQuote: null,
   isInitialized: false,
   isLoading: false,
   error: null,
@@ -62,10 +97,7 @@ export const useLoanStore = create<LoanState>((set) => ({
 
   loadLoans: async () => {
     await runStoreAction(set, async () => {
-      const [activeLoans, archivedLoans] = await Promise.all([
-        getActiveLoans(),
-        getArchivedLoans()
-      ]);
+      const { activeLoans, archivedLoans } = await loadLoansFromRepositories();
 
       set({
         activeLoans,
@@ -73,6 +105,50 @@ export const useLoanStore = create<LoanState>((set) => ({
         isInitialized: true
       });
     });
+  },
+
+  loadLoanDetail: async (id) => {
+    let selectedLoan: Loan | null = null;
+
+    await runStoreAction(set, async () => {
+      selectedLoan = await getLoanById(id);
+      const selectedPaymentHistories = selectedLoan
+        ? await getPaymentHistoriesByLoanId(id)
+        : [];
+      const selectedPaymentQuote = selectedLoan
+        ? calculatePaymentQuote(selectedLoan)
+        : null;
+
+      set({
+        selectedLoan,
+        selectedPaymentHistories,
+        selectedPaymentQuote,
+        isInitialized: true
+      });
+    });
+
+    return selectedLoan;
+  },
+
+  getPaymentQuote: async (loanId) => {
+    let paymentQuote: AmountDueResult | null = null;
+
+    await runStoreAction(set, async () => {
+      const loan = await getLoanById(loanId);
+
+      if (!loan) {
+        throw new Error(`Loan not found: ${loanId}`);
+      }
+
+      paymentQuote = calculatePaymentQuote(loan);
+      set({ selectedPaymentQuote: paymentQuote });
+    });
+
+    if (!paymentQuote) {
+      throw new Error(`Loan not found: ${loanId}`);
+    }
+
+    return paymentQuote;
   },
 
   createLoan: async (input) => {
@@ -155,6 +231,86 @@ export const useLoanStore = create<LoanState>((set) => ({
     });
   },
 
+  receivePayment: async (input) => {
+    let result: ReceivePaymentResult | null = null;
+
+    await runStoreAction(set, async () => {
+      if (input.paidAmount <= 0 || Number.isNaN(input.paidAmount)) {
+        throw new Error("Payment amount must be greater than 0.");
+      }
+
+      const loan = await getLoanById(input.loanId);
+
+      if (!loan) {
+        throw new Error(`Loan not found: ${input.loanId}`);
+      }
+
+      const paymentDate = input.paymentDate ?? new Date().toISOString();
+      const calculation = applyPaymentToLoan({
+        principal: loan.principal,
+        interestRate: loan.interestRate,
+        unpaidInterest: loan.unpaidInterest,
+        creditBalance: loan.creditBalance,
+        paidAmount: input.paidAmount,
+        currentDueDate: loan.currentDueDate,
+        paymentCycle: loan.paymentCycle,
+        paymentDate
+      });
+
+      validatePaymentCalculation(calculation);
+
+      const updatedLoan = await updateLoanInRepository({
+        id: loan.id,
+        unpaidInterest: calculation.newUnpaidInterest,
+        creditBalance: calculation.newCreditBalance,
+        accumulatedProfit: loan.accumulatedProfit + calculation.accumulatedProfitDelta,
+        currentDueDate: calculation.newCurrentDueDate
+      });
+
+      if (!updatedLoan) {
+        throw new Error(`Loan not found: ${loan.id}`);
+      }
+
+      const payment = await createPaymentHistory({
+        id: createLocalId("payment"),
+        loanId: loan.id,
+        type: getPaymentHistoryType(calculation),
+        paidAmount: calculation.paidAmount,
+        expectedAmount: calculation.rawDue,
+        unpaidInterestCreated: calculation.unpaidInterestCreated,
+        creditCreated: calculation.creditCreated,
+        paymentDate,
+        dueCycleDate: loan.currentDueDate,
+        note: input.note?.trim() || null
+      });
+
+      const [loans, selectedPaymentHistories] = await Promise.all([
+        loadLoansFromRepositories(),
+        getPaymentHistoriesByLoanId(loan.id)
+      ]);
+
+      set({
+        ...loans,
+        selectedLoan: updatedLoan,
+        selectedPaymentHistories,
+        selectedPaymentQuote: calculatePaymentQuote(updatedLoan),
+        isInitialized: true
+      });
+
+      result = {
+        loan: updatedLoan,
+        payment,
+        calculation
+      };
+    });
+
+    if (!result) {
+      throw new Error("Payment could not be received.");
+    }
+
+    return result;
+  },
+
   clearError: () => set({ error: null })
 }));
 
@@ -168,6 +324,38 @@ async function loadLoansFromRepositories() {
     activeLoans,
     archivedLoans
   };
+}
+
+function calculatePaymentQuote(loan: Loan) {
+  const expectedInterest = calculateExpectedInterest(loan.principal, loan.interestRate);
+
+  return calculateAmountDue({
+    expectedInterest,
+    unpaidInterest: loan.unpaidInterest,
+    creditBalance: loan.creditBalance
+  });
+}
+
+function getPaymentHistoryType(result: ApplyPaymentResult): PaymentHistoryType {
+  if (result.unpaidInterestCreated > 0) {
+    return "partial_payment";
+  }
+
+  if (result.creditCreated > 0) {
+    return "overpayment";
+  }
+
+  return "payment_received";
+}
+
+function validatePaymentCalculation(result: ApplyPaymentResult) {
+  if (result.amountDue < 0 || result.rawDue < 0) {
+    throw new Error("Invalid payment calculation result.");
+  }
+}
+
+function createLocalId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 async function runStoreAction(

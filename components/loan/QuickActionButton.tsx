@@ -7,6 +7,8 @@ type QuickActionButtonProps = {
   label: string;
   icon: React.ComponentProps<typeof Ionicons>["name"];
   tone: QuickActionTone;
+  disabled?: boolean;
+  onPress?: () => void;
 };
 
 const toneClassNames: Record<QuickActionTone, { shell: string; icon: string; text: string }> = {
@@ -27,14 +29,21 @@ const toneClassNames: Record<QuickActionTone, { shell: string; icon: string; tex
   }
 };
 
-export function QuickActionButton({ label, icon, tone }: QuickActionButtonProps) {
+export function QuickActionButton({
+  label,
+  icon,
+  tone,
+  disabled = false,
+  onPress
+}: QuickActionButtonProps) {
   const styles = toneClassNames[tone];
 
   return (
     <Pressable
       accessibilityRole="button"
-      disabled
-      className={`flex-1 items-center gap-2 rounded-[20px] border px-3 py-4 ${styles.shell}`}
+      disabled={disabled}
+      onPress={onPress}
+      className={`flex-1 items-center gap-2 rounded-[20px] border px-3 py-4 ${disabled ? "opacity-70" : "active:opacity-80"} ${styles.shell}`}
     >
       <View className="h-9 w-9 items-center justify-center rounded-full bg-white/5">
         <Ionicons name={icon} size={18} className={styles.icon} />

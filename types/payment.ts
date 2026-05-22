@@ -1,4 +1,10 @@
-export type PaymentHistoryType = "interest_payment" | "auto_credit" | "loan_close";
+export type PaymentHistoryType =
+  | "interest_payment"
+  | "auto_credit"
+  | "loan_close"
+  | "payment_received"
+  | "partial_payment"
+  | "overpayment";
 
 export type PaymentHistory = {
   id: string;

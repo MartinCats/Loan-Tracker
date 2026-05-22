@@ -38,6 +38,8 @@ export type ApplyPaymentResult = {
   newUnpaidInterest: number;
   newCreditBalance: number;
   nextDueDate: string;
+  isCyclePaid: boolean;
+  newCurrentDueDate: string;
 };
 
 const millisecondsPerDay = 24 * 60 * 60 * 1000;
@@ -133,6 +135,8 @@ export function applyPaymentToLoan({
   const newCreditBalance = remainingCredit + creditCreated;
   const newUnpaidInterest = unpaidInterestCreated;
   const nextDueDate = calculateNextDueDate(currentDueDate, paymentCycle);
+  const isCyclePaid = amountDue === 0 || normalizedPaidAmount >= amountDue;
+  const newCurrentDueDate = isCyclePaid ? nextDueDate : toDateOnlyString(currentDueDate);
 
   return {
     expectedInterest,
@@ -145,7 +149,9 @@ export function applyPaymentToLoan({
     creditCreated,
     newUnpaidInterest,
     newCreditBalance,
-    nextDueDate
+    nextDueDate,
+    isCyclePaid,
+    newCurrentDueDate
   };
 }
 

@@ -134,5 +134,12 @@ function mapPaymentHistoryRow(row: PaymentHistoryRow): PaymentHistory {
 }
 
 function isValidPaymentHistoryType(type: string): type is PaymentHistoryType {
-  return type === "interest_payment" || type === "auto_credit" || type === "loan_close";
+  return (
+    type === "interest_payment" ||
+    type === "auto_credit" ||
+    type === "loan_close" ||
+    type === "payment_received" ||
+    type === "partial_payment" ||
+    type === "overpayment"
+  );
 }
