@@ -7,6 +7,7 @@ type TimelineEventItemProps = {
   title: string;
   subtitle: string;
   amount?: string;
+  note?: string | null;
   date: string;
   tone: TimelineTone;
   icon: React.ComponentProps<typeof Ionicons>["name"];
@@ -39,6 +40,7 @@ export function TimelineEventItem({
   title,
   subtitle,
   amount,
+  note,
   date,
   tone,
   icon
@@ -65,6 +67,11 @@ export function TimelineEventItem({
         </View>
 
         {amount ? <Text className={`mt-3 text-[16px] font-semibold ${styles.text}`}>{amount}</Text> : null}
+        {note ? (
+          <View className="mt-3 rounded-[14px] border border-white/10 bg-black/10 px-3 py-2">
+            <Text className="text-[13px] leading-5 text-muted">{note}</Text>
+          </View>
+        ) : null}
       </View>
     </View>
   );

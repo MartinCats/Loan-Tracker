@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
@@ -100,6 +101,7 @@ function toDashboardLoan(loan: Loan): DashboardLoan {
 }
 
 export default function DashboardScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const {
     activeLoans,
@@ -294,15 +296,20 @@ export default function DashboardScreen() {
                   key={loan.id}
                   entering={FadeInUp.delay(130 + index * 55).duration(360)}
                 >
-                  <LoanFocusCard
-                    borrowerName={loan.borrowerName}
-                    amountDue={formatCurrency(loan.principal)}
-                    amountLabel="Principal"
-                    countdownText={loan.countdownText}
-                    dueDate={formatDueDate(loan.dueDate)}
-                    paymentCycle={loan.paymentCycle}
-                    urgency={getCardUrgency(loan.urgency)}
-                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => router.push(`/loan/${encodeURIComponent(loan.id)}`)}
+                  >
+                    <LoanFocusCard
+                      borrowerName={loan.borrowerName}
+                      amountDue={formatCurrency(loan.principal)}
+                      amountLabel="Principal"
+                      countdownText={loan.countdownText}
+                      dueDate={formatDueDate(loan.dueDate)}
+                      paymentCycle={loan.paymentCycle}
+                      urgency={getCardUrgency(loan.urgency)}
+                    />
+                  </Pressable>
                 </Animated.View>
               ))}
             </View>

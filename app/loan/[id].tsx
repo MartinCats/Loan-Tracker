@@ -29,6 +29,7 @@ const mockLoanDetail = {
 
 const mockTimeline = [
   {
+    id: "mock-payment-april",
     title: "Received interest",
     subtitle: "Interest payment recorded for the April cycle.",
     amount: "$4,600",
@@ -37,6 +38,7 @@ const mockTimeline = [
     icon: "checkmark-circle-outline" as const
   },
   {
+    id: "mock-overdue-may",
     title: "Cycle overdue",
     subtitle: "Current cycle passed its expected due date.",
     date: "May 18",
@@ -44,6 +46,7 @@ const mockTimeline = [
     icon: "alert-circle-outline" as const
   },
   {
+    id: "mock-rescheduled-march",
     title: "Cycle rescheduled",
     subtitle: "Due date moved for this cycle only.",
     date: "Mar 28",
@@ -51,6 +54,7 @@ const mockTimeline = [
     icon: "calendar-outline" as const
   },
   {
+    id: "mock-partial-march",
     title: "Partial payment",
     subtitle: "A partial interest payment was received.",
     amount: "$2,000",
@@ -129,48 +133,58 @@ export default function LoanDetailScreen() {
   const [paymentNote, setPaymentNote] = useState("");
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const [isLoadingLoanDetail, setIsLoadingLoanDetail] = useState(false);
 
   useEffect(() => {
     if (loanId) {
-      loadLoanDetail(loanId).catch(() => {
-        // Store error state handles display; mock fallback remains visible.
-      });
+      setIsLoadingLoanDetail(true);
+      loadLoanDetail(loanId)
+        .catch(() => {
+          // Store error state handles display; mock fallback remains visible for the preview route only.
+        })
+        .finally(() => setIsLoadingLoanDetail(false));
     }
   }, [loadLoanDetail, loanId]);
 
-  const displayLoan = selectedLoan
+  const matchedSelectedLoan = selectedLoan?.id === loanId ? selectedLoan : null;
+  const shouldUseMockPreview = !matchedSelectedLoan && loanId === "test-loan";
+  const displayLoan = matchedSelectedLoan
     ? {
-      borrowerName: selectedLoan.borrowerName,
+      borrowerName: matchedSelectedLoan.borrowerName,
       amountDue: selectedPaymentQuote?.amountDue ?? 0,
       statusText: selectedPaymentQuote?.amountDue === 0 ? "Covered by credit" : "Payment due",
-      nextDueDate: selectedLoan.currentDueDate,
-      paymentCycle: formatPaymentCycle(selectedLoan.paymentCycle),
+      nextDueDate: matchedSelectedLoan.currentDueDate,
+      paymentCycle: formatPaymentCycle(matchedSelectedLoan.paymentCycle),
       urgency: selectedPaymentQuote?.amountDue === 0 ? "healthy" as const : "soon" as const,
-      principal: selectedLoan.principal,
-      interestRate: `${selectedLoan.interestRate}%`,
-      unpaidInterest: selectedLoan.unpaidInterest,
-      creditBalance: selectedLoan.creditBalance,
-      accumulatedProfit: selectedLoan.accumulatedProfit
+      principal: matchedSelectedLoan.principal,
+      interestRate: `${matchedSelectedLoan.interestRate}%`,
+      unpaidInterest: matchedSelectedLoan.unpaidInterest,
+      creditBalance: matchedSelectedLoan.creditBalance,
+      accumulatedProfit: matchedSelectedLoan.accumulatedProfit
     }
-    : mockLoanDetail;
+    : shouldUseMockPreview
+      ? mockLoanDetail
+      : null;
 
   const timelineEvents = useMemo(() => {
     if (selectedPaymentHistories.length === 0) {
-      return mockTimeline;
+      return shouldUseMockPreview ? mockTimeline : [];
     }
 
     return selectedPaymentHistories.map((history) => {
       const meta = getTimelineMeta(history.type);
 
       return {
+        id: history.id,
         ...meta,
         amount: formatCurrency(history.paidAmount),
+        note: history.note,
         date: formatPaymentDate(history.paymentDate ?? history.createdAt)
       };
     });
-  }, [selectedPaymentHistories]);
+  }, [selectedPaymentHistories, shouldUseMockPreview]);
 
-  const amountDueText = formatCurrency(displayLoan.amountDue);
+  const amountDueText = formatCurrency(displayLoan?.amountDue ?? 0);
 
   function openPaymentModal() {
     clearError();
@@ -247,12 +261,28 @@ export default function LoanDetailScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
+        {!displayLoan ? (
+          <View className="rounded-[28px] border border-border bg-surface/90 p-6">
+            <Text className="text-[24px] font-semibold text-white">
+              {isLoadingLoanDetail ? "Loading loan" : "Loan not found"}
+            </Text>
+            <Text className="mt-2 text-[14px] leading-6 text-muted">
+              {isLoadingLoanDetail
+                ? "Loading this borrower from local storage."
+                : "This loan could not be found on this device."}
+            </Text>
+            {error ? <Text className="mt-4 text-[13px] text-danger">{error}</Text> : null}
+          </View>
+        ) : (
+          <>
         <Animated.View entering={FadeInUp.duration(360)}>
           <View className="gap-1">
             <Text className="text-[12px] font-semibold uppercase tracking-[1.4px] text-mint">
               Loan detail
             </Text>
-            <Text className="text-[13px] text-muted">Mock loan ID: {id}</Text>
+            <Text className="text-[13px] text-muted">
+              {shouldUseMockPreview ? "Preview loan" : "Local loan record"}
+            </Text>
           </View>
         </Animated.View>
 
@@ -298,21 +328,32 @@ export default function LoanDetailScreen() {
             <View className="gap-1">
               <Text className="text-[24px] font-semibold text-white">Timeline</Text>
               <Text className="text-[13px] text-muted">
-                {selectedLoan ? "Recent payment activity" : "Recent mock activity"}
+                {matchedSelectedLoan ? "Recent payment activity" : "Sample activity"}
               </Text>
             </View>
-            <Text className="text-[13px] font-semibold text-mutedSoft">Preview</Text>
+            {shouldUseMockPreview ? (
+              <Text className="text-[13px] font-semibold text-mutedSoft">Preview</Text>
+            ) : null}
           </View>
 
           <View className="gap-3">
-            {timelineEvents.map((event, index) => (
-              <Animated.View
-                key={`${event.title}-${event.date}`}
-                entering={FadeInUp.delay(200 + index * 45).duration(340)}
-              >
-                <TimelineEventItem {...event} />
-              </Animated.View>
-            ))}
+            {timelineEvents.length > 0 ? (
+              timelineEvents.map((event, index) => (
+                <Animated.View
+                  key={event.id}
+                  entering={FadeInUp.delay(200 + index * 45).duration(340)}
+                >
+                  <TimelineEventItem {...event} />
+                </Animated.View>
+              ))
+            ) : (
+              <View className="rounded-[20px] border border-white/10 bg-white/5 p-4">
+                <Text className="text-[15px] font-semibold text-white">No payment history yet</Text>
+                <Text className="mt-1 text-[13px] leading-5 text-muted">
+                  Received interest records will appear here.
+                </Text>
+              </View>
+            )}
           </View>
         </Animated.View>
 
@@ -336,22 +377,26 @@ export default function LoanDetailScreen() {
           </View>
           {error ? <Text className="text-[13px] text-danger">{error}</Text> : null}
         </Animated.View>
+          </>
+        )}
       </ScrollView>
 
-      <ReceivePaymentModal
-        amount={paymentAmount}
-        amountDue={amountDueText}
-        canSubmit={Number(paymentAmount) > 0}
-        error={paymentError}
-        isSubmitting={isSubmittingPayment}
-        note={paymentNote}
-        visible={isPaymentModalVisible}
-        onAmountChange={setPaymentAmount}
-        onClose={() => setIsPaymentModalVisible(false)}
-        onNoteChange={setPaymentNote}
-        onSubmit={submitPayment}
-        onUseFullAmount={useFullPaymentAmount}
-      />
+      {displayLoan ? (
+        <ReceivePaymentModal
+          amount={paymentAmount}
+          amountDue={amountDueText}
+          canSubmit={Number(paymentAmount) > 0}
+          error={paymentError}
+          isSubmitting={isSubmittingPayment}
+          note={paymentNote}
+          visible={isPaymentModalVisible}
+          onAmountChange={setPaymentAmount}
+          onClose={() => setIsPaymentModalVisible(false)}
+          onNoteChange={setPaymentNote}
+          onSubmit={submitPayment}
+          onUseFullAmount={useFullPaymentAmount}
+        />
+      ) : null}
     </View>
   );
 }
