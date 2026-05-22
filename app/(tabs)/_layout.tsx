@@ -2,6 +2,21 @@ import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
 import { theme } from "@/constants/theme";
+import { scrollTabToTop } from "@/utils/tabScrollRegistry";
+
+const doubleTapThresholdMs = 350;
+const lastTabPressByRoute: Record<string, number> = {};
+
+function handleTabPress(routeName: string) {
+  const now = Date.now();
+  const lastPressAt = lastTabPressByRoute[routeName] ?? 0;
+
+  if (now - lastPressAt <= doubleTapThresholdMs) {
+    scrollTabToTop(routeName);
+  }
+
+  lastTabPressByRoute[routeName] = now;
+}
 
 export default function TabLayout() {
   return (
@@ -29,6 +44,9 @@ export default function TabLayout() {
     >
       <Tabs.Screen
         name="index"
+        listeners={{
+          tabPress: () => handleTabPress("index")
+        }}
         options={{
           title: "Dashboard",
           headerShown: false,
@@ -39,6 +57,9 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="loans"
+        listeners={{
+          tabPress: () => handleTabPress("loans")
+        }}
         options={{
           title: "Loans",
           tabBarIcon: ({ color, size }) => (
@@ -48,8 +69,12 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="archive"
+        listeners={{
+          tabPress: () => handleTabPress("archive")
+        }}
         options={{
           title: "Archive",
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons color={color} name="archive-outline" size={size} />
           )
@@ -57,6 +82,9 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="settings"
+        listeners={{
+          tabPress: () => handleTabPress("settings")
+        }}
         options={{
           title: "Settings",
           tabBarIcon: ({ color, size }) => (

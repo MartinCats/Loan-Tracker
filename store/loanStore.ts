@@ -19,9 +19,11 @@ import {
 import {
   applyPaymentToLoan,
   calculateAmountDue,
+  calculateCloseLoanSettlement,
   calculateExpectedInterest,
   type AmountDueResult,
-  type ApplyPaymentResult
+  type ApplyPaymentResult,
+  type CloseLoanSettlementResult
 } from "@/services/loanCalculator";
 import type { Loan } from "@/types/loan";
 import type { PaymentHistory, PaymentHistoryType } from "@/types/payment";
@@ -39,6 +41,12 @@ export type ReceivePaymentResult = {
   calculation: ApplyPaymentResult;
 };
 
+export type CloseLoanWithSettlementResult = {
+  loan: Loan;
+  payment: PaymentHistory;
+  settlement: CloseLoanSettlementResult;
+};
+
 type LoanState = {
   activeLoans: Loan[];
   archivedLoans: Loan[];
@@ -54,9 +62,11 @@ type LoanState = {
   loadLoans: () => Promise<void>;
   loadLoanDetail: (id: string) => Promise<Loan | null>;
   getPaymentQuote: (loanId: string) => Promise<AmountDueResult>;
+  getCloseLoanSettlement: (loanId: string) => Promise<CloseLoanSettlementResult>;
   createLoan: (input: CreateLoanInput) => Promise<Loan>;
   updateLoan: (input: UpdateLoanInput) => Promise<Loan>;
   closeLoan: (id: string, closedAt?: string) => Promise<Loan>;
+  closeLoanWithSettlement: (loanId: string) => Promise<CloseLoanWithSettlementResult>;
   deleteLoan: (id: string) => Promise<void>;
   receivePayment: (input: ReceivePaymentInput) => Promise<ReceivePaymentResult>;
   clearError: () => void;
@@ -151,6 +161,30 @@ export const useLoanStore = create<LoanState>((set) => ({
     return paymentQuote;
   },
 
+  getCloseLoanSettlement: async (loanId) => {
+    let settlement: CloseLoanSettlementResult | null = null;
+
+    await runStoreAction(set, async () => {
+      const loan = await getLoanById(loanId);
+
+      if (!loan) {
+        throw new Error(`Loan not found: ${loanId}`);
+      }
+
+      if (loan.status !== "active") {
+        throw new Error("Only active loans can be closed.");
+      }
+
+      settlement = calculateCloseSettlementForLoan(loan);
+    });
+
+    if (!settlement) {
+      throw new Error("Close settlement could not be calculated.");
+    }
+
+    return settlement;
+  },
+
   createLoan: async (input) => {
     let createdLoan: Loan | null = null;
 
@@ -216,6 +250,77 @@ export const useLoanStore = create<LoanState>((set) => ({
     }
 
     return closedLoan;
+  },
+
+  closeLoanWithSettlement: async (loanId) => {
+    let result: CloseLoanWithSettlementResult | null = null;
+
+    await runStoreAction(set, async () => {
+      const loan = await getLoanById(loanId);
+
+      if (!loan) {
+        throw new Error(`Loan not found: ${loanId}`);
+      }
+
+      if (loan.status !== "active") {
+        throw new Error("Only active loans can be closed.");
+      }
+
+      const closedAt = new Date().toISOString();
+      const settlement = calculateCloseSettlementForLoan(loan);
+
+      const closedLoan = await updateLoanInRepository({
+        id: loan.id,
+        status: "closed",
+        closedAt,
+        updatedAt: closedAt,
+        unpaidInterest: 0,
+        creditBalance: settlement.remainingCredit,
+        accumulatedProfit: loan.accumulatedProfit + settlement.accumulatedProfitDelta
+      });
+
+      if (!closedLoan) {
+        throw new Error(`Loan not found: ${loan.id}`);
+      }
+
+      const payment = await createPaymentHistory({
+        id: createLocalId("close"),
+        loanId: loan.id,
+        type: "loan_close",
+        paidAmount: settlement.totalRequiredToClose,
+        expectedAmount: settlement.rawSettlementAmount,
+        unpaidInterestCreated: 0,
+        creditCreated: 0,
+        paymentDate: closedAt,
+        dueCycleDate: loan.currentDueDate,
+        note: "Loan close settlement"
+      });
+
+      const [loans, selectedPaymentHistories] = await Promise.all([
+        loadLoansFromRepositories(),
+        getPaymentHistoriesByLoanId(loan.id)
+      ]);
+
+      set({
+        ...loans,
+        selectedLoan: closedLoan,
+        selectedPaymentHistories,
+        selectedPaymentQuote: calculatePaymentQuote(closedLoan),
+        isInitialized: true
+      });
+
+      result = {
+        loan: closedLoan,
+        payment,
+        settlement
+      };
+    });
+
+    if (!result) {
+      throw new Error("Loan could not be closed.");
+    }
+
+    return result;
   },
 
   deleteLoan: async (id) => {
@@ -331,6 +436,15 @@ function calculatePaymentQuote(loan: Loan) {
 
   return calculateAmountDue({
     expectedInterest,
+    unpaidInterest: loan.unpaidInterest,
+    creditBalance: loan.creditBalance
+  });
+}
+
+function calculateCloseSettlementForLoan(loan: Loan) {
+  return calculateCloseLoanSettlement({
+    principal: loan.principal,
+    interestRate: loan.interestRate,
     unpaidInterest: loan.unpaidInterest,
     creditBalance: loan.creditBalance
   });

@@ -4,11 +4,13 @@ import { ScrollView, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { CloseLoanModal } from "@/components/loan/CloseLoanModal";
 import { LoanHeroCard } from "@/components/loan/LoanHeroCard";
 import { LoanOverviewCard } from "@/components/loan/LoanOverviewCard";
 import { QuickActionButton } from "@/components/loan/QuickActionButton";
 import { ReceivePaymentModal } from "@/components/loan/ReceivePaymentModal";
 import { TimelineEventItem } from "@/components/loan/TimelineEventItem";
+import type { CloseLoanSettlementResult } from "@/services/loanCalculator";
 import { useLoanStore } from "@/store/loanStore";
 import type { PaymentCycle } from "@/types/loan";
 import type { PaymentHistory, PaymentHistoryType } from "@/types/payment";
@@ -16,8 +18,10 @@ import type { PaymentHistory, PaymentHistoryType } from "@/types/payment";
 const mockLoanDetail = {
   borrowerName: "Mali",
   amountDue: 4600,
+  amountLabel: "Currently due",
   statusText: "3 days overdue",
   nextDueDate: "May 18, 2026",
+  nextDueLabel: "Next due",
   paymentCycle: "Monthly",
   urgency: "overdue" as const,
   principal: 92000,
@@ -87,6 +91,18 @@ function formatPaymentDate(date: string | null) {
   }).format(new Date(date));
 }
 
+function formatFullDate(date: string | null | undefined) {
+  if (!date) {
+    return "No date";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  }).format(new Date(date));
+}
+
 function getTimelineMeta(type: PaymentHistoryType) {
   if (type === "partial_payment") {
     return {
@@ -103,6 +119,15 @@ function getTimelineMeta(type: PaymentHistoryType) {
       subtitle: "Extra payment was saved as credit balance.",
       tone: "cyan" as const,
       icon: "add-circle-outline" as const
+    };
+  }
+
+  if (type === "loan_close") {
+    return {
+      title: "Loan closed",
+      subtitle: "Final settlement recorded and loan moved to archive.",
+      tone: "danger" as const,
+      icon: "lock-closed-outline" as const
     };
   }
 
@@ -124,15 +149,21 @@ export default function LoanDetailScreen() {
     selectedPaymentQuote,
     error,
     clearError,
+    getCloseLoanSettlement,
     getPaymentQuote,
     loadLoanDetail,
+    closeLoanWithSettlement,
     receivePayment
   } = useLoanStore();
   const [isPaymentModalVisible, setIsPaymentModalVisible] = useState(false);
+  const [isCloseModalVisible, setIsCloseModalVisible] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const [closeSettlement, setCloseSettlement] = useState<CloseLoanSettlementResult | null>(null);
+  const [closeError, setCloseError] = useState<string | null>(null);
+  const [isClosingLoan, setIsClosingLoan] = useState(false);
   const [isLoadingLoanDetail, setIsLoadingLoanDetail] = useState(false);
 
   useEffect(() => {
@@ -147,15 +178,20 @@ export default function LoanDetailScreen() {
   }, [loadLoanDetail, loanId]);
 
   const matchedSelectedLoan = selectedLoan?.id === loanId ? selectedLoan : null;
+  const isArchivedLoan = matchedSelectedLoan?.status === "closed" || matchedSelectedLoan?.status === "archived";
   const shouldUseMockPreview = !matchedSelectedLoan && loanId === "test-loan";
   const displayLoan = matchedSelectedLoan
     ? {
       borrowerName: matchedSelectedLoan.borrowerName,
-      amountDue: selectedPaymentQuote?.amountDue ?? 0,
-      statusText: selectedPaymentQuote?.amountDue === 0 ? "Covered by credit" : "Payment due",
-      nextDueDate: matchedSelectedLoan.currentDueDate,
+      amountDue: isArchivedLoan ? matchedSelectedLoan.principal : selectedPaymentQuote?.amountDue ?? 0,
+      amountLabel: isArchivedLoan ? "Principal closed" : "Currently due",
+      statusText: isArchivedLoan
+        ? "Closed"
+        : selectedPaymentQuote?.amountDue === 0 ? "Covered by credit" : "Payment due",
+      nextDueDate: isArchivedLoan ? formatFullDate(matchedSelectedLoan.closedAt) : matchedSelectedLoan.currentDueDate,
+      nextDueLabel: isArchivedLoan ? "Closed date" : "Next due",
       paymentCycle: formatPaymentCycle(matchedSelectedLoan.paymentCycle),
-      urgency: selectedPaymentQuote?.amountDue === 0 ? "healthy" as const : "soon" as const,
+      urgency: isArchivedLoan || selectedPaymentQuote?.amountDue === 0 ? "healthy" as const : "soon" as const,
       principal: matchedSelectedLoan.principal,
       interestRate: `${matchedSelectedLoan.interestRate}%`,
       unpaidInterest: matchedSelectedLoan.unpaidInterest,
@@ -185,7 +221,6 @@ export default function LoanDetailScreen() {
   }, [selectedPaymentHistories, shouldUseMockPreview]);
 
   const amountDueText = formatCurrency(displayLoan?.amountDue ?? 0);
-
   function openPaymentModal() {
     clearError();
     setPaymentError(null);
@@ -244,6 +279,51 @@ export default function LoanDetailScreen() {
     }
   }
 
+  async function openCloseModal() {
+    if (!matchedSelectedLoan) {
+      setCloseError("Load a database loan before closing.");
+      return;
+    }
+
+    try {
+      setCloseError(null);
+      setCloseSettlement(null);
+      const settlement = await getCloseLoanSettlement(matchedSelectedLoan.id);
+      setCloseSettlement(settlement);
+      setIsCloseModalVisible(true);
+    } catch (closeQuoteError) {
+      setCloseError(
+        closeQuoteError instanceof Error
+          ? closeQuoteError.message
+          : "Close settlement could not be loaded."
+      );
+    }
+  }
+
+  async function confirmCloseLoan() {
+    if (!matchedSelectedLoan) {
+      setCloseError("Load a database loan before closing.");
+      return;
+    }
+
+    try {
+      setCloseError(null);
+      setIsClosingLoan(true);
+      await closeLoanWithSettlement(matchedSelectedLoan.id);
+      await loadLoanDetail(matchedSelectedLoan.id);
+      setIsCloseModalVisible(false);
+      setCloseSettlement(null);
+    } catch (closeSubmitError) {
+      setCloseError(
+        closeSubmitError instanceof Error
+          ? closeSubmitError.message
+          : "Loan could not be closed."
+      );
+    } finally {
+      setIsClosingLoan(false);
+    }
+  }
+
   return (
     <View className="flex-1 bg-background">
       <Stack.Screen options={{ headerShown: false }} />
@@ -290,8 +370,10 @@ export default function LoanDetailScreen() {
           <LoanHeroCard
             borrowerName={displayLoan.borrowerName}
             amountDue={amountDueText}
+            amountLabel={displayLoan.amountLabel}
             statusText={displayLoan.statusText}
             nextDueDate={displayLoan.nextDueDate}
+            nextDueLabel={displayLoan.nextDueLabel}
             paymentCycle={displayLoan.paymentCycle}
             urgency={displayLoan.urgency}
           />
@@ -318,7 +400,10 @@ export default function LoanDetailScreen() {
                 label: "Accumulated profit",
                 value: formatCurrency(displayLoan.accumulatedProfit),
                 tone: "mint"
-              }
+              },
+              ...(isArchivedLoan
+                ? [{ label: "Closed date", value: formatFullDate(matchedSelectedLoan?.closedAt), tone: "cyan" as const }]
+                : [])
             ]}
           />
         </Animated.View>
@@ -357,6 +442,7 @@ export default function LoanDetailScreen() {
           </View>
         </Animated.View>
 
+        {!isArchivedLoan ? (
         <Animated.View entering={FadeInUp.delay(300).duration(360)} className="gap-4">
           <View className="gap-1">
             <Text className="text-[24px] font-semibold text-white">Quick actions</Text>
@@ -373,15 +459,32 @@ export default function LoanDetailScreen() {
               onPress={openPaymentModal}
             />
             <QuickActionButton disabled label="Reschedule" icon="calendar-outline" tone="neutral" />
-            <QuickActionButton disabled label="Close Loan" icon="lock-closed-outline" tone="danger" />
+            <QuickActionButton
+              disabled={!matchedSelectedLoan || matchedSelectedLoan.status !== "active"}
+              label="Close Loan"
+              icon="lock-closed-outline"
+              tone="danger"
+              onPress={openCloseModal}
+            />
           </View>
+          {closeError ? <Text className="text-[13px] text-danger">{closeError}</Text> : null}
           {error ? <Text className="text-[13px] text-danger">{error}</Text> : null}
         </Animated.View>
+        ) : (
+          <Animated.View entering={FadeInUp.delay(300).duration(360)}>
+            <View className="rounded-[24px] border border-cyan/15 bg-cyan/10 p-5">
+              <Text className="text-[18px] font-semibold text-white">Closed loan</Text>
+              <Text className="mt-2 text-[13px] leading-5 text-muted">
+                This archived loan is read-only. Payment actions are disabled.
+              </Text>
+            </View>
+          </Animated.View>
+        )}
           </>
         )}
       </ScrollView>
 
-      {displayLoan ? (
+      {displayLoan && !isArchivedLoan ? (
         <ReceivePaymentModal
           amount={paymentAmount}
           amountDue={amountDueText}
@@ -397,6 +500,18 @@ export default function LoanDetailScreen() {
           onUseFullAmount={useFullPaymentAmount}
         />
       ) : null}
+
+      <CloseLoanModal
+        error={closeError}
+        isSubmitting={isClosingLoan}
+        settlement={closeSettlement}
+        visible={isCloseModalVisible}
+        onClose={() => {
+          setIsCloseModalVisible(false);
+          setCloseSettlement(null);
+        }}
+        onConfirm={confirmCloseLoan}
+      />
     </View>
   );
 }

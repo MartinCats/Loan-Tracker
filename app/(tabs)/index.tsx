@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,6 +11,7 @@ import { AddLoanModal } from "@/components/loan/AddLoanModal";
 import { getLoanUrgencyStatus, type LoanUrgencyStatus } from "@/services/loanCalculator";
 import { useLoanStore } from "@/store/loanStore";
 import type { Loan, PaymentCycle } from "@/types/loan";
+import { registerTabScrollHandler } from "@/utils/tabScrollRegistry";
 
 type DashboardLoan = {
   id: string;
@@ -103,6 +104,7 @@ function toDashboardLoan(loan: Loan): DashboardLoan {
 export default function DashboardScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const scrollViewRef = useRef<ScrollView>(null);
   const {
     activeLoans,
     createLoan,
@@ -124,6 +126,12 @@ export default function DashboardScreen() {
       // Store error is displayed below the action area.
     });
   }, [loadActiveLoans]);
+
+  useEffect(() => {
+    return registerTabScrollHandler("index", () => {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+    });
+  }, []);
 
   const dashboardLoans = useMemo(
     () => activeLoans.map(toDashboardLoan).sort(compareLoanUrgency),
@@ -224,6 +232,7 @@ export default function DashboardScreen() {
       <View className="absolute left-0 right-0 bottom-0 h-72 bg-auraBlue opacity-10" />
 
       <ScrollView
+        ref={scrollViewRef}
         className="flex-1"
         contentContainerClassName="gap-8 px-5"
         contentContainerStyle={{

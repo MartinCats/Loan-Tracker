@@ -5,8 +5,10 @@ type LoanUrgency = "overdue" | "healthy" | "soon";
 type LoanHeroCardProps = {
   borrowerName: string;
   amountDue: string;
+  amountLabel?: string;
   statusText: string;
   nextDueDate: string;
+  nextDueLabel?: string;
   paymentCycle: string;
   urgency: LoanUrgency;
 };
@@ -35,8 +37,10 @@ const urgencyStyles: Record<LoanUrgency, { shell: string; badge: string; badgeTe
 export function LoanHeroCard({
   borrowerName,
   amountDue,
+  amountLabel = "Currently due",
   statusText,
   nextDueDate,
+  nextDueLabel = "Next due",
   paymentCycle,
   urgency
 }: LoanHeroCardProps) {
@@ -56,13 +60,13 @@ export function LoanHeroCard({
       </View>
 
       <View className="mt-8 gap-2">
-        <Text className="text-[13px] text-muted">Currently due</Text>
+        <Text className="text-[13px] text-muted">{amountLabel}</Text>
         <Text className="text-[44px] font-semibold leading-[50px] text-white">{amountDue}</Text>
       </View>
 
       <View className="mt-6 flex-row gap-3">
         <View className="flex-1 rounded-[18px] border border-white/10 bg-white/5 p-4">
-          <Text className="text-[12px] text-mutedSoft">Next due</Text>
+          <Text className="text-[12px] text-mutedSoft">{nextDueLabel}</Text>
           <Text className="mt-1 text-[16px] font-semibold text-white">{nextDueDate}</Text>
         </View>
         <View className="flex-1 rounded-[18px] border border-white/10 bg-white/5 p-4">

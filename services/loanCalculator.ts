@@ -42,6 +42,24 @@ export type ApplyPaymentResult = {
   newCurrentDueDate: string;
 };
 
+export type CloseLoanSettlementInput = {
+  principal: number;
+  interestRate: number;
+  unpaidInterest: number;
+  creditBalance: number;
+};
+
+export type CloseLoanSettlementResult = {
+  principal: number;
+  currentInterest: number;
+  unpaidInterest: number;
+  rawSettlementAmount: number;
+  creditApplied: number;
+  totalRequiredToClose: number;
+  remainingCredit: number;
+  accumulatedProfitDelta: number;
+};
+
 const millisecondsPerDay = 24 * 60 * 60 * 1000;
 
 export function calculateExpectedInterest(principal: number, interestRate: number) {
@@ -152,6 +170,32 @@ export function applyPaymentToLoan({
     nextDueDate,
     isCyclePaid,
     newCurrentDueDate
+  };
+}
+
+export function calculateCloseLoanSettlement({
+  principal,
+  interestRate,
+  unpaidInterest,
+  creditBalance
+}: CloseLoanSettlementInput): CloseLoanSettlementResult {
+  const currentInterest = calculateExpectedInterest(principal, interestRate);
+  const rawSettlementAmount = principal + currentInterest + unpaidInterest;
+  const creditApplied = Math.min(Math.max(creditBalance, 0), rawSettlementAmount);
+  const totalRequiredToClose = Math.max(rawSettlementAmount - creditApplied, 0);
+  const remainingCredit = Math.max(creditBalance - creditApplied, 0);
+  const totalInterestDue = currentInterest + unpaidInterest;
+  const accumulatedProfitDelta = Math.min(totalRequiredToClose, totalInterestDue);
+
+  return {
+    principal,
+    currentInterest,
+    unpaidInterest,
+    rawSettlementAmount,
+    creditApplied,
+    totalRequiredToClose,
+    remainingCredit,
+    accumulatedProfitDelta
   };
 }
 
