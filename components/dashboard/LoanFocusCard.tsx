@@ -1,10 +1,11 @@
 import { Text, View } from "react-native";
 
-type Urgency = "overdue" | "today" | "soon";
+type Urgency = "overdue" | "today" | "soon" | "upcoming";
 
 type LoanFocusCardProps = {
   borrowerName: string;
   amountDue: string;
+  amountLabel?: string;
   countdownText: string;
   dueDate: string;
   paymentCycle: string;
@@ -32,12 +33,20 @@ const urgencyStyles: Record<Urgency, { shell: string; rail: string; pill: string
     pill: "border border-mint/10 bg-mint/10",
     text: "text-mint",
     amount: "text-white"
+  },
+  upcoming: {
+    shell: "border-cyan/10 bg-cyan/5 shadow-cyan/5",
+    rail: "bg-cyan",
+    pill: "border border-cyan/10 bg-cyan/5",
+    text: "text-cyan",
+    amount: "text-white"
   }
 };
 
 export function LoanFocusCard({
   borrowerName,
   amountDue,
+  amountLabel = "Amount due",
   countdownText,
   dueDate,
   paymentCycle,
@@ -60,7 +69,7 @@ export function LoanFocusCard({
       </View>
 
       <View className="mt-6 gap-1.5">
-        <Text className="text-[12px] font-medium text-muted">Amount due</Text>
+        <Text className="text-[12px] font-medium text-muted">{amountLabel}</Text>
         <Text className={`text-[34px] font-semibold leading-[40px] ${styles.amount}`}>
           {amountDue}
         </Text>
