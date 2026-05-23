@@ -155,6 +155,7 @@ function isValidPaymentHistoryType(type: string): type is PaymentHistoryType {
     type === "loan_close" ||
     type === "payment_received" ||
     type === "partial_payment" ||
-    type === "overpayment"
+    type === "overpayment" ||
+    type === "reschedule"
   );
 }

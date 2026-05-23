@@ -1,5 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
+
+import { PressableScale } from "@/components/ui/PressableScale";
+import { impactLight } from "@/utils/haptics";
 
 type QuickActionTone = "primary" | "neutral" | "danger";
 
@@ -39,16 +42,21 @@ export function QuickActionButton({
   const styles = toneClassNames[tone];
 
   return (
-    <Pressable
+    <PressableScale
       accessibilityRole="button"
       disabled={disabled}
-      onPress={onPress}
+      onPress={() => {
+        impactLight();
+        onPress?.();
+      }}
       className={`flex-1 items-center gap-2 rounded-[20px] border px-3 py-4 ${disabled ? "opacity-70" : "active:opacity-80"} ${styles.shell}`}
+      contentClassName="items-center gap-2"
+      scaleTo={0.97}
     >
       <View className="h-9 w-9 items-center justify-center rounded-full bg-white/5">
         <Ionicons name={icon} size={18} className={styles.icon} />
       </View>
       <Text className={`text-center text-[13px] font-semibold ${styles.text}`}>{label}</Text>
-    </Pressable>
+    </PressableScale>
   );
 }

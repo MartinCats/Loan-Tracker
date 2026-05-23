@@ -1,5 +1,7 @@
 import { Text, View } from "react-native";
 
+import { t } from "@/services/i18n";
+
 type Urgency = "overdue" | "today" | "soon" | "upcoming";
 
 type LoanFocusCardProps = {
@@ -97,7 +99,7 @@ export function LoanFocusCard({
       </View>
 
       <View className="mt-5 flex-row items-center justify-between border-t border-white/10 pt-4">
-        <Text className="text-[13px] text-mutedSoft">Due date</Text>
+        <Text className="text-[13px] text-mutedSoft">{t("common.dueDate")}</Text>
         <Text className="text-[15px] font-medium text-white">{dueDate}</Text>
       </View>
     </View>

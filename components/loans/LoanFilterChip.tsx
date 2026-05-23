@@ -1,4 +1,7 @@
-import { Pressable, Text } from "react-native";
+import { Text } from "react-native";
+
+import { PressableScale } from "@/components/ui/PressableScale";
+import { impactLight } from "@/utils/haptics";
 
 type LoanFilterChipProps = {
   label: string;
@@ -8,17 +11,21 @@ type LoanFilterChipProps = {
 
 export function LoanFilterChip({ label, selected, onPress }: LoanFilterChipProps) {
   return (
-    <Pressable
+    <PressableScale
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      onPress={onPress}
+      onPress={() => {
+        impactLight();
+        onPress();
+      }}
       className={`rounded-full border px-4 py-2.5 ${
         selected ? "border-mint bg-mint" : "border-white/10 bg-white/5"
       }`}
+      scaleTo={0.96}
     >
       <Text className={`text-[13px] font-semibold ${selected ? "text-background" : "text-muted"}`}>
         {label}
       </Text>
-    </Pressable>
+    </PressableScale>
   );
 }

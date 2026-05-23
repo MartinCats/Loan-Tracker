@@ -1,7 +1,6 @@
-import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -10,16 +9,29 @@ import { LoanFocusCard } from "@/components/dashboard/LoanFocusCard";
 import { SummaryCard } from "@/components/dashboard/SummaryCard";
 import { AddLoanModal } from "@/components/loan/AddLoanModal";
 import { DeleteLoanModal } from "@/components/loan/DeleteLoanModal";
-import { getLoanCountdownDisplay, type LoanCountdownDisplay } from "@/services/loanCalculator";
+import { PressableScale } from "@/components/ui/PressableScale";
+import {
+  formatCountdownDisplay,
+  formatCurrency,
+  formatDateOnly
+} from "@/services/formatters";
+import { t } from "@/services/i18n";
+import {
+  calculateExpectedProfit,
+  getLoanCountdownDisplay,
+  type LoanCountdownDisplay
+} from "@/services/loanCalculator";
 import { useLoanStore } from "@/store/loanStore";
+import { useSettingsStore } from "@/store/settingsStore";
 import type { Loan, PaymentCycle } from "@/types/loan";
 import {
   compareDateOnly,
-  formatDateOnlyForDisplay,
   getLocalTodayDateOnly,
   isValidDateOnly
 } from "@/utils/dateOnly";
+import { impactLight, impactMedium, notifyError, notifySuccess } from "@/utils/haptics";
 import { getReadableErrorMessage, getReadableErrorText } from "@/utils/readableError";
+import { getTabScreenInsets } from "@/utils/screenSpacing";
 import { registerTabScrollHandler } from "@/utils/tabScrollRegistry";
 
 type DashboardLoan = {
@@ -31,20 +43,8 @@ type DashboardLoan = {
   countdown: LoanCountdownDisplay;
 };
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0
-  }).format(amount);
-}
-
 function formatPaymentCycle(paymentCycle: PaymentCycle) {
-  return paymentCycle === "monthly" ? "Monthly" : "Every 10 days";
-}
-
-function formatDueDate(date: string) {
-  return formatDateOnlyForDisplay(date);
+  return paymentCycle === "monthly" ? t("cycle.monthly") : t("cycle.every10Days");
 }
 
 function getCardUrgency(status: LoanCountdownDisplay["status"]) {
@@ -94,12 +94,14 @@ export default function DashboardScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const {
     activeLoans,
+    archivedLoans,
     createLoan,
     deleteLoan,
     error,
     isLoading,
-    loadActiveLoans
+    loadLoans
   } = useLoanStore();
+  const language = useSettingsStore((state) => state.language);
   const [isAddLoanVisible, setIsAddLoanVisible] = useState(false);
   const [borrowerName, setBorrowerName] = useState("");
   const [principal, setPrincipal] = useState("");
@@ -113,10 +115,10 @@ export default function DashboardScreen() {
   const [isDeletingLoan, setIsDeletingLoan] = useState(false);
 
   useEffect(() => {
-    loadActiveLoans().catch(() => {
+    loadLoans().catch(() => {
       // Store error is displayed below the action area.
     });
-  }, [loadActiveLoans]);
+  }, [loadLoans]);
 
   useEffect(() => {
     return registerTabScrollHandler("index", () => {
@@ -126,23 +128,41 @@ export default function DashboardScreen() {
 
   const dashboardLoans = useMemo(
     () => activeLoans.map(toDashboardLoan).sort(compareLoanUrgency),
-    [activeLoans]
+    [activeLoans, language]
   );
   const summary = useMemo(() => {
-    return activeLoans.reduce(
+    const activeSummary = activeLoans.reduce(
       (totals, loan) => ({
-        accumulatedProfit: totals.accumulatedProfit + loan.accumulatedProfit,
         activePrincipal: totals.activePrincipal + loan.principal
       }),
       {
-        accumulatedProfit: 0,
         activePrincipal: 0
       }
     );
-  }, [activeLoans]);
+    const lifetimeProfit = [...activeLoans, ...archivedLoans].reduce(
+      (total, loan) => total + loan.accumulatedProfit,
+      0
+    );
+    const expectedProfit = activeLoans.reduce(
+      (total, loan) => total + calculateExpectedProfit({
+        accumulatedProfit: loan.accumulatedProfit,
+        interestRate: loan.interestRate,
+        principal: loan.principal
+      }),
+      0
+    );
+
+    return {
+      activePrincipal: activeSummary.activePrincipal,
+      expectedProfit,
+      lifetimeProfit
+    };
+  }, [activeLoans, archivedLoans]);
   const hasRealLoans = activeLoans.length > 0;
+  const hasLifetimeProfit = summary.lifetimeProfit > 0;
 
   function openAddLoan() {
+    impactLight();
     setFormError(null);
     setIsAddLoanVisible(true);
   }
@@ -175,22 +195,26 @@ export default function DashboardScreen() {
     const normalizedDueDate = firstDueDate.trim();
 
     if (!borrowerName.trim()) {
-      setFormError("Borrower name is required.");
+      notifyError();
+      setFormError(t("errors.borrowerRequired"));
       return;
     }
 
     if (!Number.isFinite(parsedPrincipal) || parsedPrincipal <= 0) {
-      setFormError("Principal must be greater than 0.");
+      notifyError();
+      setFormError(t("errors.principalPositive"));
       return;
     }
 
     if (!Number.isFinite(parsedInterestRate) || parsedInterestRate < 0) {
-      setFormError("Interest rate must be greater than or equal to 0.");
+      notifyError();
+      setFormError(t("errors.interestNonNegative"));
       return;
     }
 
     if (!isValidDateOnly(normalizedDueDate)) {
-      setFormError("First due date must use YYYY-MM-DD.");
+      notifyError();
+      setFormError(t("errors.dateFormat"));
       return;
     }
 
@@ -210,24 +234,21 @@ export default function DashboardScreen() {
           accumulatedProfit: 0,
           status: "active"
         }),
-        "Loan creation is taking too long. Please try again."
+        t("errors.loanCreate")
       );
-      await withOperationTimeout(
-        loadActiveLoans(),
-        "Loan was created, but the dashboard could not refresh."
-      );
+      await withOperationTimeout(loadLoans(), t("dashboard.errorLoad"));
+      notifySuccess();
       closeAddLoan();
     } catch (createError) {
-      setFormError(getReadableErrorMessage(createError, "Loan could not be created."));
+      notifyError();
+      setFormError(getReadableErrorMessage(createError, t("errors.loanCreate")));
     } finally {
       setIsCreatingLoan(false);
     }
   }
 
   function openDeleteLoan(loan: DashboardLoan) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {
-      // Haptics are best-effort and should never block the destructive confirmation flow.
-    });
+    impactMedium();
     setDeleteError(null);
     setDeleteTargetLoan(loan);
   }
@@ -250,9 +271,11 @@ export default function DashboardScreen() {
       setIsDeletingLoan(true);
       setDeleteError(null);
       await deleteLoan(deleteTargetLoan.id);
+      notifySuccess();
       setDeleteTargetLoan(null);
     } catch (deleteSubmitError) {
-      setDeleteError(getReadableErrorMessage(deleteSubmitError, "Loan could not be deleted."));
+      notifyError();
+      setDeleteError(getReadableErrorMessage(deleteSubmitError, t("errors.loanDelete")));
     } finally {
       setIsDeletingLoan(false);
     }
@@ -269,68 +292,81 @@ export default function DashboardScreen() {
         className="flex-1"
         contentContainerClassName="gap-8 px-5"
         contentContainerStyle={{
-          paddingTop: insets.top + 16,
-          paddingBottom: insets.bottom + 104
+          ...getTabScreenInsets(insets)
         }}
         showsVerticalScrollIndicator={false}
       >
         <Animated.View entering={FadeInUp.duration(380)}>
           <View className="gap-4">
             <DashboardHeader
-              title="Dashboard"
+              title={t("common.dashboard")}
               subtitle={
                 hasRealLoans
-                  ? `${activeLoans.length} active borrower${activeLoans.length === 1 ? "" : "s"}`
-                  : "No active loans yet"
+                  ? t("dashboard.subtitleActive", {
+                    count: activeLoans.length,
+                    plural: activeLoans.length === 1 ? "" : "s"
+                  })
+                  : t("dashboard.subtitleEmpty")
               }
             />
             {hasRealLoans ? (
-              <Pressable
+              <PressableScale
                 accessibilityRole="button"
                 onPress={openAddLoan}
                 className="self-start rounded-full bg-mint px-5 py-3"
+                scaleTo={0.97}
               >
-                <Text className="text-[14px] font-semibold text-background">Add Loan</Text>
-              </Pressable>
+                <Text className="text-[14px] font-semibold text-background">{t("common.addLoan")}</Text>
+              </PressableScale>
             ) : null}
+          </View>
+        </Animated.View>
+
+        <Animated.View
+          entering={FadeInUp.delay(70).duration(380)}
+          className="gap-3"
+        >
+          <View className="flex-row gap-3">
+            <SummaryCard
+              label={t("dashboard.lifetimeProfit")}
+              value={formatCurrency(summary.lifetimeProfit, language)}
+              accent="mint"
+              emphasis="primary"
+            />
+            <SummaryCard
+              label={t("dashboard.expectedProfit")}
+              value={formatCurrency(summary.expectedProfit, language)}
+              accent="cyan"
+              emphasis="secondary"
+            />
+          </View>
+          <View className="flex-row gap-3">
+            <SummaryCard
+              label={t("dashboard.principalActive")}
+              value={formatCurrency(summary.activePrincipal, language)}
+              accent="gold"
+              emphasis="secondary"
+            />
+            <SummaryCard
+              label={t("dashboard.activeLoans")}
+              value={String(activeLoans.length)}
+              accent="cyan"
+              emphasis="quiet"
+            />
           </View>
         </Animated.View>
 
         {hasRealLoans ? (
           <>
-            <Animated.View
-              entering={FadeInUp.delay(70).duration(380)}
-              className="gap-3"
-            >
-              <View className="flex-row gap-3">
-                <SummaryCard
-                  label="Profit received"
-                  value={formatCurrency(summary.accumulatedProfit)}
-                  accent="mint"
-                  emphasis="primary"
-                />
-                <SummaryCard
-                  label="Principal active"
-                  value={formatCurrency(summary.activePrincipal)}
-                  accent="gold"
-                  emphasis="secondary"
-                />
-              </View>
-              <SummaryCard
-                label="Active loans"
-                value={String(activeLoans.length)}
-                accent="cyan"
-                emphasis="quiet"
-              />
-            </Animated.View>
-
             <View className="gap-4 pt-1">
               <View className="flex-row items-end justify-between">
                 <View className="gap-1">
-                  <Text className="text-[26px] font-semibold leading-8 text-white">Active loans</Text>
-                  <Text className="text-[13px] text-muted">Real loans saved on this device</Text>
+                  <Text className="text-[26px] font-semibold leading-8 text-white">{t("dashboard.activeLoans")}</Text>
+                  <Text className="text-[13px] text-muted">{t("dashboard.realLoansSaved")}</Text>
                 </View>
-                <Text className="text-[13px] font-semibold text-mint">{activeLoans.length} active</Text>
+                <Text className="text-[13px] font-semibold text-mint">
+                  {t("dashboard.activeCount", { count: activeLoans.length })}
+                </Text>
               </View>
 
               {dashboardLoans.map((loan, index) => (
@@ -338,24 +374,28 @@ export default function DashboardScreen() {
                   key={loan.id}
                   entering={FadeInUp.delay(130 + index * 55).duration(360)}
                 >
-                  <Pressable
+                  <PressableScale
                     accessibilityRole="button"
                     delayLongPress={360}
                     onLongPress={() => openDeleteLoan(loan)}
-                    onPress={() => router.push(`/loan/${encodeURIComponent(loan.id)}`)}
+                    onPress={() => {
+                      impactLight();
+                      router.push(`/loan/${encodeURIComponent(loan.id)}`);
+                    }}
+                    scaleTo={0.985}
                   >
                     <LoanFocusCard
                       borrowerName={loan.borrowerName}
-                      amountDue={formatCurrency(loan.principal)}
-                      amountLabel="Principal"
-                      countdownValue={loan.countdown.value}
-                      countdownLabel={loan.countdown.label}
+                      amountDue={formatCurrency(loan.principal, language)}
+                      amountLabel={t("common.principal")}
+                      countdownValue={formatCountdownDisplay(loan.countdown).value}
+                      countdownLabel={formatCountdownDisplay(loan.countdown).label}
                       countdownAccessibilityLabel={loan.countdown.accessibilityLabel}
-                      dueDate={formatDueDate(loan.dueDate)}
+                      dueDate={formatDateOnly(loan.dueDate, language)}
                       paymentCycle={loan.paymentCycle}
                       urgency={getCardUrgency(loan.countdown.status)}
                     />
-                  </Pressable>
+                  </PressableScale>
                 </Animated.View>
               ))}
             </View>
@@ -363,20 +403,27 @@ export default function DashboardScreen() {
         ) : (
           <Animated.View entering={FadeInUp.delay(90).duration(380)}>
             <View className="items-center justify-center rounded-[28px] border border-mint/20 bg-surface/90 p-8 shadow-lg shadow-mint/5">
-              <Text className="text-[22px] font-semibold text-white">No loans yet</Text>
-              <Text className="mt-2 text-center text-[14px] leading-6 text-muted">
-                Add your first borrower to start tracking real local loans.
+              <Text className="text-center text-[22px] font-semibold text-white">
+                {hasLifetimeProfit ? t("dashboard.noActiveTitle") : t("dashboard.noLoansTitle")}
               </Text>
-              <Pressable
+              <Text className="mt-2 text-center text-[14px] leading-6 text-muted">
+                {hasLifetimeProfit
+                  ? t("dashboard.noActiveWithProfitBody", {
+                    amount: formatCurrency(summary.lifetimeProfit, language)
+                  })
+                  : t("dashboard.noLoansBody")}
+              </Text>
+              <PressableScale
                 accessibilityRole="button"
                 onPress={openAddLoan}
                 className="mt-6 rounded-full bg-mint px-5 py-3"
+                scaleTo={0.97}
               >
-                <Text className="text-[14px] font-semibold text-background">Add Loan</Text>
-              </Pressable>
+                <Text className="text-[14px] font-semibold text-background">{t("common.addLoan")}</Text>
+              </PressableScale>
               {error && !isLoading ? (
                 <Text className="mt-4 text-center text-[13px] text-danger">
-                  {getReadableErrorText(error, "Dashboard could not load. Please try again.")}
+                  {getReadableErrorText(error, t("dashboard.errorLoad"))}
                 </Text>
               ) : null}
             </View>

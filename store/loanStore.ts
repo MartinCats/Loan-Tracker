@@ -35,6 +35,7 @@ import {
 } from "@/services/loanCalculator";
 import type { Loan } from "@/types/loan";
 import type { PaymentHistory, PaymentHistoryType } from "@/types/payment";
+import { isValidDateOnly } from "@/utils/dateOnly";
 
 export type ReceivePaymentInput = {
   loanId: string;
@@ -53,6 +54,17 @@ export type CloseLoanWithSettlementResult = {
   loan: Loan;
   payment: PaymentHistory;
   settlement: CloseLoanSettlementResult;
+};
+
+export type RescheduleLoanInput = {
+  loanId: string;
+  newDueDate: string;
+  note?: string;
+};
+
+export type RescheduleLoanResult = {
+  loan: Loan;
+  payment: PaymentHistory;
 };
 
 type LoanState = {
@@ -80,6 +92,7 @@ type LoanState = {
   exportBackupCsv: () => Promise<BackupExportResult>;
   exportBackupJson: () => Promise<BackupExportResult>;
   receivePayment: (input: ReceivePaymentInput) => Promise<ReceivePaymentResult>;
+  rescheduleLoan: (input: RescheduleLoanInput) => Promise<RescheduleLoanResult>;
   clearError: () => void;
 };
 
@@ -516,6 +529,77 @@ export const useLoanStore = create<LoanState>((set) => ({
     return result;
   },
 
+  rescheduleLoan: async (input) => {
+    let result: RescheduleLoanResult | null = null;
+
+    await runStoreAction(set, async () => {
+      const newDueDate = input.newDueDate.trim();
+
+      if (!isValidDateOnly(newDueDate)) {
+        throw new Error("New due date must use YYYY-MM-DD.");
+      }
+
+      const loan = await getLoanById(input.loanId);
+
+      if (!loan) {
+        throw new Error(`Loan not found: ${input.loanId}`);
+      }
+
+      if (loan.status !== "active") {
+        throw new Error("Only active loans can be rescheduled.");
+      }
+
+      const updatedAt = new Date().toISOString();
+      const updatedLoan = await updateLoanInRepository({
+        id: loan.id,
+        currentDueDate: newDueDate,
+        updatedAt
+      });
+
+      if (!updatedLoan) {
+        throw new Error(`Loan not found: ${loan.id}`);
+      }
+
+      const payment = await createPaymentHistory({
+        id: createLocalId("reschedule"),
+        loanId: loan.id,
+        type: "reschedule",
+        paidAmount: 0,
+        expectedAmount: 0,
+        unpaidInterestCreated: 0,
+        creditCreated: 0,
+        paymentDate: null,
+        dueCycleDate: newDueDate,
+        note: createRescheduleNote(loan.currentDueDate, newDueDate, input.note),
+        createdAt: updatedAt
+      });
+
+      const [loans, selectedPaymentHistories] = await Promise.all([
+        loadLoansFromRepositories(),
+        getPaymentHistoriesByLoanId(loan.id)
+      ]);
+
+      set({
+        ...loans,
+        selectedLoan: updatedLoan,
+        selectedPaymentHistories,
+        selectedPaymentQuote: calculatePaymentQuote(updatedLoan),
+        isInitialized: true
+      });
+
+      result = {
+        loan: updatedLoan,
+        payment
+      };
+    });
+
+    if (!result) {
+      throw new Error("Loan could not be rescheduled.");
+    }
+
+    return result;
+  },
+
   clearError: () => set({ error: null })
 }));
 
@@ -566,6 +650,13 @@ function validatePaymentCalculation(result: ApplyPaymentResult) {
   if (result.amountDue < 0 || result.rawDue < 0) {
     throw new Error("Invalid payment calculation result.");
   }
+}
+
+function createRescheduleNote(oldDueDate: string, newDueDate: string, note?: string) {
+  const trimmedNote = note?.trim();
+  const summary = `${oldDueDate} -> ${newDueDate}`;
+
+  return trimmedNote ? `${summary}\n${trimmedNote}` : summary;
 }
 
 function createLocalId(prefix: string) {

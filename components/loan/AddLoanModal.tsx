@@ -1,4 +1,5 @@
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -9,8 +10,11 @@ import {
   View
 } from "react-native";
 
+import { PressableScale } from "@/components/ui/PressableScale";
+import { t } from "@/services/i18n";
 import type { PaymentCycle } from "@/types/loan";
 import { formatLocalDateOnly } from "@/utils/dateOnly";
+import { impactLight } from "@/utils/haptics";
 
 type AddLoanModalProps = {
   visible: boolean;
@@ -31,15 +35,15 @@ type AddLoanModalProps = {
 };
 
 const cycleOptions: Array<{ label: string; value: PaymentCycle }> = [
-  { label: "Monthly", value: "monthly" },
-  { label: "Every 10 days", value: "every_10_days" }
+  { label: "cycle.monthly", value: "monthly" },
+  { label: "cycle.every10Days", value: "every_10_days" }
 ];
 
 const quickDateOptions = [
-  { label: "Today", daysToAdd: 0 },
-  { label: "Tomorrow", daysToAdd: 1 },
-  { label: "+10 days", daysToAdd: 10 },
-  { label: "Next month", monthsToAdd: 1 }
+  { label: "common.today", daysToAdd: 0 },
+  { label: "addLoan.tomorrow", daysToAdd: 1 },
+  { label: "addLoan.plus10Days", daysToAdd: 10 },
+  { label: "addLoan.nextMonth", monthsToAdd: 1 }
 ];
 
 export function AddLoanModal({
@@ -78,9 +82,9 @@ export function AddLoanModal({
           >
             <View className="flex-row items-start justify-between gap-4">
               <View className="flex-1 gap-1">
-                <Text className="text-[22px] font-semibold text-white">Add loan</Text>
+                <Text className="text-[22px] font-semibold text-white">{t("addLoan.title")}</Text>
                 <Text className="text-[13px] leading-5 text-muted">
-                  Create a real local loan record on this device.
+                  {t("addLoan.subtitle")}
                 </Text>
               </View>
               <Pressable
@@ -94,9 +98,9 @@ export function AddLoanModal({
 
             <View className="gap-4">
               <LabeledInput
-                label="Borrower name"
+                label={t("addLoan.borrowerName")}
                 value={borrowerName}
-                placeholder="Name"
+                placeholder={t("addLoan.namePlaceholder")}
                 onChangeText={onBorrowerNameChange}
               />
 
@@ -104,7 +108,7 @@ export function AddLoanModal({
                 <View className="flex-1">
                   <LabeledInput
                     keyboardType="decimal-pad"
-                    label="Principal"
+                    label={t("common.principal")}
                     value={principal}
                     placeholder="0"
                     onChangeText={onPrincipalChange}
@@ -113,7 +117,7 @@ export function AddLoanModal({
                 <View className="flex-1">
                   <LabeledInput
                     keyboardType="decimal-pad"
-                    label="Interest %"
+                    label={t("addLoan.interest")}
                     value={interestRate}
                     placeholder="0"
                     onChangeText={onInterestRateChange}
@@ -122,63 +126,71 @@ export function AddLoanModal({
               </View>
 
               <View className="gap-2">
-                <Text className="text-[13px] font-medium text-muted">Payment cycle</Text>
+                <Text className="text-[13px] font-medium text-muted">{t("addLoan.paymentCycle")}</Text>
                 <View className="flex-row gap-2 rounded-[18px] bg-white/5 p-1">
                   {cycleOptions.map((option) => {
                     const isSelected = paymentCycle === option.value;
 
                     return (
-                      <Pressable
+                      <PressableScale
                         accessibilityRole="button"
                         key={option.value}
-                        onPress={() => onPaymentCycleChange(option.value)}
+                        onPress={() => {
+                          impactLight();
+                          onPaymentCycleChange(option.value);
+                        }}
                         className={`flex-1 rounded-[15px] px-3 py-3 ${isSelected ? "bg-mint" : "bg-transparent"}`}
+                        scaleTo={0.97}
                       >
                         <Text
                           className={`text-center text-[13px] font-semibold ${
                             isSelected ? "text-background" : "text-muted"
                           }`}
                         >
-                          {option.label}
+                          {t(option.label)}
                         </Text>
-                      </Pressable>
+                      </PressableScale>
                     );
                   })}
                 </View>
               </View>
 
               <LabeledInput
-                label="First due date"
+                label={t("addLoan.firstDueDate")}
                 value={firstDueDate}
-                placeholder="YYYY-MM-DD"
+                placeholder={t("addLoan.datePlaceholder")}
                 onChangeText={onFirstDueDateChange}
               />
 
               <View className="gap-2">
-                <Text className="text-[13px] font-medium text-muted">Quick date</Text>
+                <Text className="text-[13px] font-medium text-muted">{t("addLoan.quickDate")}</Text>
                 <View className="flex-row flex-wrap gap-2">
                   {quickDates.map((option) => {
                     const isSelected = firstDueDate === option.value;
 
                     return (
-                      <Pressable
+                      <PressableScale
                         accessibilityRole="button"
                         key={option.label}
-                        onPress={() => onFirstDueDateChange(option.value)}
+                        onPress={() => {
+                          impactLight();
+                          onFirstDueDateChange(option.value);
+                        }}
                         className={`rounded-full border px-3 py-2 ${
                           isSelected
                             ? "border-mint bg-mint"
                             : "border-white/10 bg-white/5"
                         }`}
+                        scaleTo={0.96}
                       >
                         <Text
                           className={`text-[12px] font-semibold ${
                             isSelected ? "text-background" : "text-muted"
                           }`}
                         >
-                          {option.label}
+                          {t(option.label)}
                         </Text>
-                      </Pressable>
+                      </PressableScale>
                     );
                   })}
                 </View>
@@ -186,16 +198,20 @@ export function AddLoanModal({
 
               {error ? <Text className="text-[13px] leading-5 text-danger">{error}</Text> : null}
 
-              <Pressable
+              <PressableScale
                 accessibilityRole="button"
                 disabled={isSubmitting}
                 onPress={onSubmit}
                 className={`items-center rounded-[18px] px-4 py-4 ${isSubmitting ? "bg-white/10" : "bg-mint"}`}
+                scaleTo={0.98}
               >
-                <Text className={`text-[15px] font-semibold ${isSubmitting ? "text-muted" : "text-background"}`}>
-                  {isSubmitting ? "Creating..." : "Create loan"}
-                </Text>
-              </Pressable>
+                <View className="h-5 flex-row items-center gap-2">
+                  {isSubmitting ? <ActivityIndicator color="#8A9691" size="small" /> : null}
+                  <Text className={`text-[15px] font-semibold ${isSubmitting ? "text-muted" : "text-background"}`}>
+                    {isSubmitting ? t("addLoan.creating") : t("addLoan.createLoan")}
+                  </Text>
+                </View>
+              </PressableScale>
             </View>
           </ScrollView>
         </View>

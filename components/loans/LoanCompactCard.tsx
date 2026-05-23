@@ -1,5 +1,7 @@
 import { Text, View } from "react-native";
 
+import { t } from "@/services/i18n";
+
 type Urgency = "overdue" | "today" | "upcoming";
 
 type LoanCompactCardProps = {
@@ -56,8 +58,8 @@ export function LoanCompactCard({
           </Text>
           <Text className="mt-1 text-[12px] text-mutedSoft">{paymentCycle}</Text>
           <View className="mt-4 flex-row gap-3">
-            <Metric label="Principal" value={principal} />
-            <Metric label="Due" value={amountDue} tone="mint" />
+            <Metric label={t("common.principal")} value={principal} />
+            <Metric label={t("common.due")} value={amountDue} tone="mint" />
           </View>
         </View>
 
@@ -79,7 +81,7 @@ export function LoanCompactCard({
       </View>
 
       <View className="mt-4 flex-row items-center justify-between border-t border-white/10 pt-3">
-        <Text className="text-[12px] text-muted">Due date</Text>
+        <Text className="text-[12px] text-muted">{t("common.dueDate")}</Text>
         <Text className="text-[13px] font-medium text-white">{dueDate}</Text>
       </View>
     </View>

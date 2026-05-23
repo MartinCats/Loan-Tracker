@@ -1,11 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { PressableScale } from "@/components/ui/PressableScale";
+import { t } from "@/services/i18n";
 import { useLoanStore } from "@/store/loanStore";
+import { useSettingsStore } from "@/store/settingsStore";
+import { impactLight, notifyError, notifySuccess } from "@/utils/haptics";
 import { getReadableErrorMessage } from "@/utils/readableError";
+import { getTabScreenInsets } from "@/utils/screenSpacing";
 import { registerTabScrollHandler } from "@/utils/tabScrollRegistry";
 
 type ExportType = "json" | "csv";
@@ -17,6 +22,8 @@ export default function SettingsScreen() {
     exportBackupCsv,
     exportBackupJson
   } = useLoanStore();
+  const language = useSettingsStore((state) => state.language);
+  const setLanguage = useSettingsStore((state) => state.setLanguage);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [exportingType, setExportingType] = useState<ExportType | null>(null);
@@ -40,12 +47,23 @@ export default function SettingsScreen() {
         ? await exportBackupJson()
         : await exportBackupCsv();
 
-      setExportStatus(`${result.fileName} is ready to share.`);
+      notifySuccess();
+      setExportStatus(t("settings.exportReady", { fileName: result.fileName }));
     } catch (error) {
-      setExportError(getReadableErrorMessage(error, "Data could not be exported. Please try again."));
+      notifyError();
+      setExportError(getReadableErrorMessage(error, t("settings.exportError")));
     } finally {
       setExportingType(null);
     }
+  }
+
+  async function changeLanguage(nextLanguage: "en" | "th") {
+    if (nextLanguage === language) {
+      return;
+    }
+
+    impactLight();
+    await setLanguage(nextLanguage);
   }
 
   return (
@@ -58,8 +76,7 @@ export default function SettingsScreen() {
         className="flex-1"
         contentContainerClassName="gap-6 px-5"
         contentContainerStyle={{
-          paddingTop: insets.top + 16,
-          paddingBottom: insets.bottom + 104
+          ...getTabScreenInsets(insets)
         }}
         showsVerticalScrollIndicator={false}
       >
@@ -67,63 +84,70 @@ export default function SettingsScreen() {
           <View className="gap-3">
             <View className="self-start rounded-full border border-cyan/20 bg-cyan/10 px-3 py-1.5">
               <Text className="text-[11px] font-semibold uppercase tracking-[1.6px] text-cyan">
-                Settings
+                {t("common.settings")}
               </Text>
             </View>
             <View className="gap-1.5">
-              <Text className="text-[40px] font-semibold leading-[46px] text-white">Preferences</Text>
+              <Text className="text-[40px] font-semibold leading-[46px] text-white">{t("settings.title")}</Text>
               <Text className="text-[15px] leading-6 text-muted">
-                App info and local device backup.
+                {t("settings.subtitle")}
               </Text>
             </View>
           </View>
         </Animated.View>
 
         <Animated.View entering={FadeInUp.delay(60).duration(360)}>
-          <SettingsSection title="App">
+          <SettingsSection title={t("settings.app")}>
             <InfoRow
               icon="phone-portrait-outline"
-              label="Haptics"
-              value="Enabled where supported"
+              label={t("settings.haptics")}
+              value={t("settings.hapticsValue")}
             />
             <InfoRow
               icon="cash-outline"
-              label="Currency display"
-              value="THB default"
+              label={t("settings.currencyDisplay")}
+              value={t("settings.currencyValue")}
             />
             <InfoRow
               icon="moon-outline"
-              label="Appearance"
-              value="Dark mode only"
+              label={t("settings.appearance")}
+              value={t("settings.appearanceValue")}
             />
+            <View className="gap-2 rounded-[18px] bg-white/5 p-3">
+              <Text className="text-[13px] text-muted">{t("settings.language")}</Text>
+              <View className="flex-row gap-2">
+                <LanguageButton label={t("settings.languageEnglish")} selected={language === "en"} onPress={() => changeLanguage("en")} />
+                <LanguageButton label={t("settings.languageThai")} selected={language === "th"} onPress={() => changeLanguage("th")} />
+              </View>
+            </View>
           </SettingsSection>
         </Animated.View>
 
         <Animated.View entering={FadeInUp.delay(110).duration(360)}>
           <SettingsSection
-            title="Data"
-            description="Your loans are stored locally on this device. Export a backup before changing devices or reinstalling."
+            title={t("settings.data")}
+            description={t("settings.dataDescription")}
           >
             <ExportButton
-              description="Full backup with active loans, archived loans, and payment histories."
+              description={t("settings.exportJsonDescription")}
               disabled={exportingType !== null}
               icon="document-text-outline"
               isLoading={exportingType === "json"}
-              label="Export data as JSON"
+              label={t("settings.exportJson")}
               onPress={() => exportData("json")}
             />
             <ExportButton
-              description="Simple loans summary for spreadsheets."
+              description={t("settings.exportCsvDescription")}
               disabled={exportingType !== null}
               icon="grid-outline"
               isLoading={exportingType === "csv"}
-              label="Export loans as CSV"
+              label={t("settings.exportCsv")}
               onPress={() => exportData("csv")}
             />
             <View className="rounded-[18px] border border-white/10 bg-white/5 p-4">
-              <Text className="text-[13px] font-semibold text-muted">Restore backup</Text>
+              <Text className="text-[13px] font-semibold text-muted">{t("settings.restoreBackup")}</Text>
               <Text className="mt-1 text-[13px] leading-5 text-mutedSoft">
-                Import and restore will be added in a later phase.
+                {t("settings.restoreBackupDescription")}
               </Text>
             </View>
             {exportStatus ? <Text className="text-[13px] leading-5 text-mint">{exportStatus}</Text> : null}
@@ -132,26 +156,26 @@ export default function SettingsScreen() {
         </Animated.View>
 
         <Animated.View entering={FadeInUp.delay(160).duration(360)}>
-          <SettingsSection title="About">
+          <SettingsSection title={t("settings.about")}>
             <InfoRow
               icon="wallet-outline"
-              label="App"
-              value="Loan Tracker"
+              label={t("settings.app")}
+              value={t("common.appName")}
             />
             <InfoRow
               icon="pricetag-outline"
-              label="Version"
+              label={t("settings.version")}
               value="1.0.0"
             />
             <InfoRow
               icon="cloud-offline-outline"
-              label="Storage"
-              value="Offline-first"
+              label={t("settings.storage")}
+              value={t("settings.storageValue")}
             />
             <InfoRow
               icon="server-outline"
-              label="Database"
-              value="Local SQLite"
+              label={t("settings.database")}
+              value={t("settings.databaseValue")}
             />
           </SettingsSection>
         </Animated.View>
@@ -222,25 +246,49 @@ function ExportButton({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <PressableScale
       accessibilityRole="button"
       disabled={disabled}
-      onPress={onPress}
+      onPress={() => {
+        impactLight();
+        onPress();
+      }}
       className={`flex-row items-center gap-3 rounded-[20px] border p-4 ${
         disabled ? "border-white/10 bg-white/5 opacity-70" : "border-mint/20 bg-mint/10 active:opacity-80"
       }`}
+      contentClassName="flex-row items-center gap-3"
+      scaleTo={0.985}
     >
       <View className="h-11 w-11 items-center justify-center rounded-full bg-white/5">
         <Ionicons color="#8EE6C1" name={icon} size={20} />
       </View>
       <View className="min-w-0 flex-1">
         <Text className="text-[15px] font-semibold text-white">
-          {isLoading ? "Preparing..." : label}
+          {isLoading ? t("settings.preparing") : label}
         </Text>
         <Text className="mt-1 text-[12px] leading-5 text-muted">
           {description}
         </Text>
       </View>
-    </Pressable>
+      {isLoading ? <ActivityIndicator color="#8EE6C1" size="small" /> : null}
+    </PressableScale>
+  );
+}
+
+function LanguageButton({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  return (
+    <PressableScale
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      className={`flex-1 rounded-[15px] border px-3 py-3 ${
+        selected ? "border-mint bg-mint" : "border-white/10 bg-white/5"
+      }`}
+      scaleTo={0.97}
+    >
+      <Text className={`text-center text-[13px] font-semibold ${selected ? "text-background" : "text-muted"}`}>
+        {label}
+      </Text>
+    </PressableScale>
   );
 }

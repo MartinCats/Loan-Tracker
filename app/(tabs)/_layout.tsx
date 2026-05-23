@@ -2,6 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
 import { theme } from "@/constants/theme";
+import { t } from "@/services/i18n";
+import { useSettingsStore } from "@/store/settingsStore";
 import { scrollTabToTop } from "@/utils/tabScrollRegistry";
 
 const doubleTapThresholdMs = 350;
@@ -19,8 +21,11 @@ function handleTabPress(routeName: string) {
 }
 
 export default function TabLayout() {
+  const language = useSettingsStore((state) => state.language);
+
   return (
     <Tabs
+      key={language}
       screenOptions={{
         headerStyle: { backgroundColor: theme.colors.background },
         headerTintColor: theme.colors.text,
@@ -48,7 +53,7 @@ export default function TabLayout() {
           tabPress: () => handleTabPress("index")
         }}
         options={{
-          title: "Dashboard",
+          title: t("tabs.dashboard"),
           headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons color={color} name="pie-chart-outline" size={size} />
@@ -61,7 +66,8 @@ export default function TabLayout() {
           tabPress: () => handleTabPress("loans")
         }}
         options={{
-          title: "Loans",
+          title: t("tabs.loans"),
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons color={color} name="wallet-outline" size={size} />
           )
@@ -73,7 +79,7 @@ export default function TabLayout() {
           tabPress: () => handleTabPress("archive")
         }}
         options={{
-          title: "Archive",
+          title: t("tabs.archive"),
           headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons color={color} name="archive-outline" size={size} />
@@ -86,7 +92,8 @@ export default function TabLayout() {
           tabPress: () => handleTabPress("settings")
         }}
         options={{
-          title: "Settings",
+          title: t("tabs.settings"),
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons color={color} name="settings-outline" size={size} />
           )

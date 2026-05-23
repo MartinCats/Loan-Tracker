@@ -20,17 +20,23 @@ export function compareDateOnly(left: string, right: string) {
   return left.localeCompare(right);
 }
 
-export function formatDateOnlyForDisplay(value: string) {
+export function formatDateOnlyForDisplay(
+  value: string,
+  locale = "en-US",
+  options: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  }
+) {
   const parts = parseDateOnlyParts(value);
 
   if (!parts) {
     return "Invalid date";
   }
 
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
+  return new Intl.DateTimeFormat(locale, {
+    ...options,
     timeZone: "UTC"
   }).format(new Date(Date.UTC(parts.year, parts.monthIndex, parts.day)));
 }

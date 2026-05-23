@@ -4,7 +4,8 @@ export type PaymentHistoryType =
   | "loan_close"
   | "payment_received"
   | "partial_payment"
-  | "overpayment";
+  | "overpayment"
+  | "reschedule";
 
 export type PaymentHistory = {
   id: string;

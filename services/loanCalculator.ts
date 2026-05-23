@@ -74,6 +74,18 @@ export function calculateExpectedInterest(principal: number, interestRate: numbe
   return principal * interestRate / 100;
 }
 
+export function calculateExpectedProfit({
+  accumulatedProfit,
+  interestRate,
+  principal
+}: {
+  accumulatedProfit: number;
+  interestRate: number;
+  principal: number;
+}) {
+  return Math.max(calculateExpectedInterest(principal, interestRate) - accumulatedProfit, 0);
+}
+
 export function calculateAmountDue({
   expectedInterest,
   unpaidInterest,

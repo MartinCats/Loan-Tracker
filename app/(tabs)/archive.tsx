@@ -1,32 +1,21 @@
-import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { DeleteLoanModal } from "@/components/loan/DeleteLoanModal";
+import { PressableScale } from "@/components/ui/PressableScale";
+import { formatCurrency, formatTimestamp } from "@/services/formatters";
+import { t } from "@/services/i18n";
 import { useLoanStore } from "@/store/loanStore";
+import { useSettingsStore } from "@/store/settingsStore";
 import type { Loan } from "@/types/loan";
-import { formatTimestampForDisplay } from "@/utils/dateOnly";
+import { impactLight, impactMedium, notifyError, notifySuccess } from "@/utils/haptics";
 import { getReadableErrorMessage, getReadableErrorText } from "@/utils/readableError";
+import { getTabScreenInsets } from "@/utils/screenSpacing";
 import { registerTabScrollHandler } from "@/utils/tabScrollRegistry";
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0
-  }).format(amount);
-}
-
-function formatClosedDate(date: string | null | undefined) {
-  if (!date) {
-    return "No close date";
-  }
-
-  return formatTimestampForDisplay(date);
-}
 
 export default function ArchiveScreen() {
   const router = useRouter();
@@ -39,6 +28,7 @@ export default function ArchiveScreen() {
     isLoading,
     loadArchivedLoans
   } = useLoanStore();
+  const language = useSettingsStore((state) => state.language);
   const [deleteTargetLoan, setDeleteTargetLoan] = useState<Loan | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeletingLoan, setIsDeletingLoan] = useState(false);
@@ -56,7 +46,7 @@ export default function ArchiveScreen() {
   }, []);
 
   function openDeleteLoan(loan: Loan) {
-    triggerDeleteHaptic();
+    impactMedium();
     setDeleteError(null);
     setDeleteTargetLoan(loan);
   }
@@ -80,9 +70,11 @@ export default function ArchiveScreen() {
       setDeleteError(null);
       await deleteArchivedLoan(deleteTargetLoan.id);
       await loadArchivedLoans();
+      notifySuccess();
       setDeleteTargetLoan(null);
     } catch (deleteSubmitError) {
-      setDeleteError(getReadableErrorMessage(deleteSubmitError, "Archived loan could not be deleted."));
+      notifyError();
+      setDeleteError(getReadableErrorMessage(deleteSubmitError, t("errors.archivedDelete")));
     } finally {
       setIsDeletingLoan(false);
     }
@@ -98,8 +90,7 @@ export default function ArchiveScreen() {
         className="flex-1"
         contentContainerClassName="gap-6 px-5"
         contentContainerStyle={{
-          paddingTop: insets.top + 16,
-          paddingBottom: insets.bottom + 104
+          ...getTabScreenInsets(insets)
         }}
         showsVerticalScrollIndicator={false}
       >
@@ -107,15 +98,18 @@ export default function ArchiveScreen() {
           <View className="gap-3">
             <View className="self-start rounded-full border border-cyan/20 bg-cyan/10 px-3 py-1.5">
               <Text className="text-[11px] font-semibold uppercase tracking-[1.6px] text-cyan">
-                Archive
+                {t("common.archive")}
               </Text>
             </View>
             <View className="gap-1.5">
-              <Text className="text-[40px] font-semibold leading-[46px] text-white">Closed loans</Text>
+              <Text className="text-[40px] font-semibold leading-[46px] text-white">{t("archive.title")}</Text>
               <Text className="text-[15px] leading-6 text-muted">
                 {archivedLoans.length > 0
-                  ? `${archivedLoans.length} closed borrower${archivedLoans.length === 1 ? "" : "s"}`
-                  : "Loans you close will appear here"}
+                  ? t("archive.subtitleActive", {
+                    count: archivedLoans.length,
+                    plural: archivedLoans.length === 1 ? "" : "s"
+                  })
+                  : t("archive.subtitleEmpty")}
               </Text>
             </View>
           </View>
@@ -128,27 +122,31 @@ export default function ArchiveScreen() {
                 key={loan.id}
                 entering={FadeInUp.delay(90 + index * 45).duration(340)}
               >
-                <Pressable
+                <PressableScale
                   accessibilityRole="button"
                   delayLongPress={360}
                   onLongPress={() => openDeleteLoan(loan)}
-                  onPress={() => router.push(`/loan/${encodeURIComponent(loan.id)}`)}
+                  onPress={() => {
+                    impactLight();
+                    router.push(`/loan/${encodeURIComponent(loan.id)}`);
+                  }}
+                  scaleTo={0.985}
                 >
-                  <ArchivedLoanCard loan={loan} />
-                </Pressable>
+                  <ArchivedLoanCard loan={loan} language={language} />
+                </PressableScale>
               </Animated.View>
             ))}
           </View>
         ) : (
           <Animated.View entering={FadeInUp.delay(90).duration(360)}>
             <View className="items-center justify-center rounded-[28px] border border-cyan/20 bg-surface/90 p-8 shadow-lg shadow-cyan/5">
-              <Text className="text-[22px] font-semibold text-white">No closed loans yet</Text>
+              <Text className="text-[22px] font-semibold text-white">{t("archive.noClosedTitle")}</Text>
               <Text className="mt-2 text-center text-[14px] leading-6 text-muted">
-                Close a loan from its detail screen to preserve it here.
+                {t("archive.noClosedBody")}
               </Text>
               {error && !isLoading ? (
                 <Text className="mt-4 text-center text-[13px] text-danger">
-                  {getReadableErrorText(error, "Archive could not load. Please try again.")}
+                  {getReadableErrorText(error, t("archive.errorLoad"))}
                 </Text>
               ) : null}
             </View>
@@ -160,8 +158,8 @@ export default function ArchiveScreen() {
         borrowerName={deleteTargetLoan?.borrowerName}
         error={deleteError}
         isSubmitting={isDeletingLoan}
-        message="This will permanently delete this archived loan and its payment history."
-        title="Delete archived loan?"
+        message={t("archive.deleteMessage")}
+        title={t("archive.deleteTitle")}
         visible={deleteTargetLoan !== null}
         onClose={closeDeleteLoan}
         onConfirm={confirmDeleteLoan}
@@ -170,29 +168,26 @@ export default function ArchiveScreen() {
   );
 }
 
-function triggerDeleteHaptic() {
-  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {
-    // Haptics are best-effort and should not block the delete confirmation flow.
-  });
-}
 
-function ArchivedLoanCard({ loan }: { loan: Loan }) {
+function ArchivedLoanCard({ loan, language }: { loan: Loan; language: "en" | "th" }) {
   return (
     <View className="overflow-hidden rounded-[24px] border border-white/10 bg-surface/90 p-5 shadow-lg shadow-black/20">
       <View className="absolute left-0 right-0 top-0 h-10 bg-cyan opacity-5" />
       <View className="flex-row items-start justify-between gap-4">
         <View className="flex-1 gap-1">
           <Text className="text-[18px] font-semibold leading-6 text-white">{loan.borrowerName}</Text>
-          <Text className="text-[13px] text-mutedSoft">Closed {formatClosedDate(loan.closedAt)}</Text>
+          <Text className="text-[13px] text-mutedSoft">
+            {t("archive.closedPrefix")} {formatTimestamp(loan.closedAt, language) || t("common.noDate")}
+          </Text>
         </View>
         <View className="rounded-full border border-cyan/15 bg-cyan/10 px-3 py-1">
-          <Text className="text-[12px] font-semibold text-cyan">Closed</Text>
+          <Text className="text-[12px] font-semibold text-cyan">{t("common.closed")}</Text>
         </View>
       </View>
 
       <View className="mt-5 flex-row gap-3">
-        <ArchiveMetric label="Principal" value={formatCurrency(loan.principal)} />
-        <ArchiveMetric label="Profit" value={formatCurrency(loan.accumulatedProfit)} />
+        <ArchiveMetric label={t("common.principal")} value={formatCurrency(loan.principal, language)} />
+        <ArchiveMetric label={t("common.profit")} value={formatCurrency(loan.accumulatedProfit, language)} />
       </View>
     </View>
   );
