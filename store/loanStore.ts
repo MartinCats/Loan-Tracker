@@ -68,6 +68,7 @@ type LoanState = {
   updateLoan: (input: UpdateLoanInput) => Promise<Loan>;
   closeLoan: (id: string, closedAt?: string) => Promise<Loan>;
   closeLoanWithSettlement: (loanId: string) => Promise<CloseLoanWithSettlementResult>;
+  deleteArchivedLoan: (id: string) => Promise<void>;
   deleteLoan: (id: string) => Promise<void>;
   receivePayment: (input: ReceivePaymentInput) => Promise<ReceivePaymentResult>;
   clearError: () => void;
@@ -334,6 +335,33 @@ export const useLoanStore = create<LoanState>((set) => ({
 
       if (loan.status !== "active") {
         throw new Error("Only active loans can be deleted.");
+      }
+
+      await deletePaymentHistoriesByLoanId(id);
+      await deleteLoanInRepository(id);
+
+      const loans = await loadLoansFromRepositories();
+
+      set({
+        ...loans,
+        selectedLoan: null,
+        selectedPaymentHistories: [],
+        selectedPaymentQuote: null,
+        isInitialized: true
+      });
+    });
+  },
+
+  deleteArchivedLoan: async (id) => {
+    await runStoreAction(set, async () => {
+      const loan = await getLoanById(id);
+
+      if (!loan) {
+        throw new Error(`Loan not found: ${id}`);
+      }
+
+      if (loan.status !== "closed" && loan.status !== "archived") {
+        throw new Error("Only archived loans can be deleted.");
       }
 
       await deletePaymentHistoriesByLoanId(id);

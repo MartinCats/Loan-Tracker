@@ -1,3 +1,4 @@
+import * as Haptics from "expo-haptics";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
@@ -161,6 +162,7 @@ export default function LoanDetailScreen() {
     getPaymentQuote,
     loadLoanDetail,
     closeLoanWithSettlement,
+    deleteArchivedLoan,
     deleteLoan,
     receivePayment
   } = useLoanStore();
@@ -192,6 +194,7 @@ export default function LoanDetailScreen() {
   const matchedSelectedLoan = selectedLoan?.id === loanId ? selectedLoan : null;
   const isArchivedLoan = matchedSelectedLoan?.status === "closed" || matchedSelectedLoan?.status === "archived";
   const activeMatchedLoan = matchedSelectedLoan?.status === "active" ? matchedSelectedLoan : null;
+  const archivedMatchedLoan = isArchivedLoan ? matchedSelectedLoan : null;
   const shouldUseMockPreview = !matchedSelectedLoan && loanId === "test-loan";
   const displayLoan = matchedSelectedLoan
     ? {
@@ -370,11 +373,14 @@ export default function LoanDetailScreen() {
   }
 
   function openDeleteModal() {
-    if (!activeMatchedLoan) {
+    if (!activeMatchedLoan && !archivedMatchedLoan) {
       setDeleteError("Only active loans can be deleted.");
       return;
     }
 
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {
+      // Haptics are best-effort and should not block the delete confirmation flow.
+    });
     setDeleteError(null);
     setIsDeleteModalVisible(true);
   }
@@ -393,14 +399,26 @@ export default function LoanDetailScreen() {
       return;
     }
 
-    if (!activeMatchedLoan) {
-      setDeleteError("Load an active database loan before deleting.");
+    if (!activeMatchedLoan && !archivedMatchedLoan) {
+      setDeleteError("Load a database loan before deleting.");
       return;
     }
 
     try {
       setDeleteError(null);
       setIsDeletingLoan(true);
+      if (archivedMatchedLoan) {
+        await deleteArchivedLoan(archivedMatchedLoan.id);
+        setIsDeleteModalVisible(false);
+        router.replace("/archive");
+        return;
+      }
+
+      if (!activeMatchedLoan) {
+        setDeleteError("Load an active database loan before deleting.");
+        return;
+      }
+
       await deleteLoan(activeMatchedLoan.id);
       setIsDeleteModalVisible(false);
       router.replace("/");
@@ -582,6 +600,15 @@ export default function LoanDetailScreen() {
               <Text className="mt-2 text-[13px] leading-5 text-muted">
                 This archived loan is read-only. Payment actions are disabled.
               </Text>
+              {archivedMatchedLoan ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={openDeleteModal}
+                  className="mt-4 self-start rounded-full border border-danger/20 bg-danger/10 px-4 py-2.5 active:opacity-80"
+                >
+                  <Text className="text-[13px] font-semibold text-danger">Delete archived loan</Text>
+                </Pressable>
+              ) : null}
             </View>
           </Animated.View>
         )}
@@ -618,6 +645,12 @@ export default function LoanDetailScreen() {
         borrowerName={matchedSelectedLoan?.borrowerName}
         error={deleteError}
         isSubmitting={isDeletingLoan}
+        message={
+          archivedMatchedLoan
+            ? "This will permanently delete this archived loan and its payment history."
+            : undefined
+        }
+        title={archivedMatchedLoan ? "Delete archived loan?" : undefined}
         visible={isDeleteModalVisible}
         onClose={closeDeleteModal}
         onConfirm={confirmDeleteLoan}

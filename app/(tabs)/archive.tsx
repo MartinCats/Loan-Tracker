@@ -1,13 +1,15 @@
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { DeleteLoanModal } from "@/components/loan/DeleteLoanModal";
 import { useLoanStore } from "@/store/loanStore";
 import type { Loan } from "@/types/loan";
 import { formatTimestampForDisplay } from "@/utils/dateOnly";
-import { getReadableErrorText } from "@/utils/readableError";
+import { getReadableErrorMessage, getReadableErrorText } from "@/utils/readableError";
 import { registerTabScrollHandler } from "@/utils/tabScrollRegistry";
 
 function formatCurrency(amount: number) {
@@ -32,10 +34,14 @@ export default function ArchiveScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const {
     archivedLoans,
+    deleteArchivedLoan,
     error,
     isLoading,
     loadArchivedLoans
   } = useLoanStore();
+  const [deleteTargetLoan, setDeleteTargetLoan] = useState<Loan | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeletingLoan, setIsDeletingLoan] = useState(false);
 
   useEffect(() => {
     loadArchivedLoans().catch(() => {
@@ -48,6 +54,39 @@ export default function ArchiveScreen() {
       scrollViewRef.current?.scrollTo({ y: 0, animated: true });
     });
   }, []);
+
+  function openDeleteLoan(loan: Loan) {
+    triggerDeleteHaptic();
+    setDeleteError(null);
+    setDeleteTargetLoan(loan);
+  }
+
+  function closeDeleteLoan() {
+    if (isDeletingLoan) {
+      return;
+    }
+
+    setDeleteTargetLoan(null);
+    setDeleteError(null);
+  }
+
+  async function confirmDeleteLoan() {
+    if (isDeletingLoan || !deleteTargetLoan) {
+      return;
+    }
+
+    try {
+      setIsDeletingLoan(true);
+      setDeleteError(null);
+      await deleteArchivedLoan(deleteTargetLoan.id);
+      await loadArchivedLoans();
+      setDeleteTargetLoan(null);
+    } catch (deleteSubmitError) {
+      setDeleteError(getReadableErrorMessage(deleteSubmitError, "Archived loan could not be deleted."));
+    } finally {
+      setIsDeletingLoan(false);
+    }
+  }
 
   return (
     <View className="flex-1 bg-background">
@@ -91,6 +130,8 @@ export default function ArchiveScreen() {
               >
                 <Pressable
                   accessibilityRole="button"
+                  delayLongPress={360}
+                  onLongPress={() => openDeleteLoan(loan)}
                   onPress={() => router.push(`/loan/${encodeURIComponent(loan.id)}`)}
                 >
                   <ArchivedLoanCard loan={loan} />
@@ -114,8 +155,25 @@ export default function ArchiveScreen() {
           </Animated.View>
         )}
       </ScrollView>
+
+      <DeleteLoanModal
+        borrowerName={deleteTargetLoan?.borrowerName}
+        error={deleteError}
+        isSubmitting={isDeletingLoan}
+        message="This will permanently delete this archived loan and its payment history."
+        title="Delete archived loan?"
+        visible={deleteTargetLoan !== null}
+        onClose={closeDeleteLoan}
+        onConfirm={confirmDeleteLoan}
+      />
     </View>
   );
+}
+
+function triggerDeleteHaptic() {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {
+    // Haptics are best-effort and should not block the delete confirmation flow.
+  });
 }
 
 function ArchivedLoanCard({ loan }: { loan: Loan }) {

@@ -1,10 +1,13 @@
 import { Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
 
 type DeleteLoanModalProps = {
   borrowerName?: string;
   error?: string | null;
   isSubmitting?: boolean;
+  message?: string;
+  title?: string;
   visible: boolean;
   onClose: () => void;
   onConfirm: () => void;
@@ -14,6 +17,8 @@ export function DeleteLoanModal({
   borrowerName,
   error,
   isSubmitting = false,
+  message = "This will permanently delete this loan and its payment history.",
+  title = "Delete loan?",
   visible,
   onClose,
   onConfirm
@@ -31,9 +36,9 @@ export function DeleteLoanModal({
         <Pressable className="absolute inset-0" onPress={onClose} />
         <View className="rounded-[28px] border border-danger/20 bg-surface p-5 shadow-lg shadow-danger/10">
           <View className="gap-2">
-            <Text className="text-[22px] font-semibold text-white">Delete loan?</Text>
+            <Text className="text-[22px] font-semibold text-white">{title}</Text>
             <Text className="text-[14px] leading-6 text-muted">
-              This will permanently delete this loan and its payment history.
+              {message}
             </Text>
             {borrowerName ? (
               <Text className="text-[13px] font-semibold text-danger">{borrowerName}</Text>
@@ -54,7 +59,15 @@ export function DeleteLoanModal({
             <Pressable
               accessibilityRole="button"
               disabled={isSubmitting}
-              onPress={onConfirm}
+              onPress={async () => {
+                if (isSubmitting) return;
+
+                await Haptics.notificationAsync(
+                  Haptics.NotificationFeedbackType.Warning
+                );
+
+                onConfirm();
+              }}
               className="flex-1 items-center rounded-full bg-danger px-4 py-3 active:opacity-80 disabled:opacity-60"
             >
               <Text className="text-[14px] font-semibold text-white">
