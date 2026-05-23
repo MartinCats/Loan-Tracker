@@ -6,6 +6,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useLoanStore } from "@/store/loanStore";
 import type { Loan } from "@/types/loan";
+import { formatTimestampForDisplay } from "@/utils/dateOnly";
+import { getReadableErrorText } from "@/utils/readableError";
 import { registerTabScrollHandler } from "@/utils/tabScrollRegistry";
 
 function formatCurrency(amount: number) {
@@ -21,11 +23,7 @@ function formatClosedDate(date: string | null | undefined) {
     return "No close date";
   }
 
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric"
-  }).format(new Date(date));
+  return formatTimestampForDisplay(date);
 }
 
 export default function ArchiveScreen() {
@@ -107,7 +105,11 @@ export default function ArchiveScreen() {
               <Text className="mt-2 text-center text-[14px] leading-6 text-muted">
                 Close a loan from its detail screen to preserve it here.
               </Text>
-              {error && !isLoading ? <Text className="mt-4 text-center text-[13px] text-danger">{error}</Text> : null}
+              {error && !isLoading ? (
+                <Text className="mt-4 text-center text-[13px] text-danger">
+                  {getReadableErrorText(error, "Archive could not load. Please try again.")}
+                </Text>
+              ) : null}
             </View>
           </Animated.View>
         )}

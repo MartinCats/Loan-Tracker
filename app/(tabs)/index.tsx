@@ -13,6 +13,13 @@ import { DeleteLoanModal } from "@/components/loan/DeleteLoanModal";
 import { getLoanCountdownDisplay, type LoanCountdownDisplay } from "@/services/loanCalculator";
 import { useLoanStore } from "@/store/loanStore";
 import type { Loan, PaymentCycle } from "@/types/loan";
+import {
+  compareDateOnly,
+  formatDateOnlyForDisplay,
+  getLocalTodayDateOnly,
+  isValidDateOnly
+} from "@/utils/dateOnly";
+import { getReadableErrorMessage, getReadableErrorText } from "@/utils/readableError";
 import { registerTabScrollHandler } from "@/utils/tabScrollRegistry";
 
 type DashboardLoan = {
@@ -37,11 +44,7 @@ function formatPaymentCycle(paymentCycle: PaymentCycle) {
 }
 
 function formatDueDate(date: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric"
-  }).format(new Date(date));
+  return formatDateOnlyForDisplay(date);
 }
 
 function getCardUrgency(status: LoanCountdownDisplay["status"]) {
@@ -69,11 +72,11 @@ function compareLoanUrgency(a: DashboardLoan, b: DashboardLoan) {
     return urgencyDifference;
   }
 
-  return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+  return compareDateOnly(a.dueDate, b.dueDate);
 }
 
 function toDashboardLoan(loan: Loan): DashboardLoan {
-  const countdown = getLoanCountdownDisplay(loan.currentDueDate, new Date().toISOString());
+  const countdown = getLoanCountdownDisplay(loan.currentDueDate, getLocalTodayDateOnly());
 
   return {
     id: loan.id,
@@ -154,11 +157,19 @@ export default function DashboardScreen() {
   }
 
   function closeAddLoan() {
+    if (isCreatingLoan) {
+      return;
+    }
+
     setIsAddLoanVisible(false);
     resetAddLoanForm();
   }
 
   async function submitAddLoan() {
+    if (isCreatingLoan) {
+      return;
+    }
+
     const parsedPrincipal = Number(principal);
     const parsedInterestRate = Number(interestRate);
     const normalizedDueDate = firstDueDate.trim();
@@ -178,7 +189,7 @@ export default function DashboardScreen() {
       return;
     }
 
-    if (!isValidIsoDate(normalizedDueDate)) {
+    if (!isValidDateOnly(normalizedDueDate)) {
       setFormError("First due date must use YYYY-MM-DD.");
       return;
     }
@@ -207,7 +218,7 @@ export default function DashboardScreen() {
       );
       closeAddLoan();
     } catch (createError) {
-      setFormError(createError instanceof Error ? createError.message : "Loan could not be created.");
+      setFormError(getReadableErrorMessage(createError, "Loan could not be created."));
     } finally {
       setIsCreatingLoan(false);
     }
@@ -231,7 +242,7 @@ export default function DashboardScreen() {
   }
 
   async function confirmDeleteLoan() {
-    if (!deleteTargetLoan) {
+    if (isDeletingLoan || !deleteTargetLoan) {
       return;
     }
 
@@ -241,11 +252,7 @@ export default function DashboardScreen() {
       await deleteLoan(deleteTargetLoan.id);
       setDeleteTargetLoan(null);
     } catch (deleteSubmitError) {
-      setDeleteError(
-        deleteSubmitError instanceof Error
-          ? deleteSubmitError.message
-          : "Loan could not be deleted."
-      );
+      setDeleteError(getReadableErrorMessage(deleteSubmitError, "Loan could not be deleted."));
     } finally {
       setIsDeletingLoan(false);
     }
@@ -367,7 +374,11 @@ export default function DashboardScreen() {
               >
                 <Text className="text-[14px] font-semibold text-background">Add Loan</Text>
               </Pressable>
-              {error && !isLoading ? <Text className="mt-4 text-center text-[13px] text-danger">{error}</Text> : null}
+              {error && !isLoading ? (
+                <Text className="mt-4 text-center text-[13px] text-danger">
+                  {getReadableErrorText(error, "Dashboard could not load. Please try again.")}
+                </Text>
+              ) : null}
             </View>
           </Animated.View>
         )}
@@ -400,16 +411,6 @@ export default function DashboardScreen() {
       />
     </View>
   );
-}
-
-function isValidIsoDate(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return false;
-  }
-
-  const date = new Date(`${value}T00:00:00.000Z`);
-
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
 function createLocalId(prefix: string) {

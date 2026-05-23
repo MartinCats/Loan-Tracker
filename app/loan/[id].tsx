@@ -15,6 +15,8 @@ import type { CloseLoanSettlementResult } from "@/services/loanCalculator";
 import { useLoanStore } from "@/store/loanStore";
 import type { PaymentCycle } from "@/types/loan";
 import type { PaymentHistory, PaymentHistoryType } from "@/types/payment";
+import { formatDateOnlyForDisplay, formatTimestampForDisplay } from "@/utils/dateOnly";
+import { getReadableErrorMessage, getReadableErrorText } from "@/utils/readableError";
 
 const mockLoanDetail = {
   borrowerName: "Mali",
@@ -86,6 +88,10 @@ function formatPaymentDate(date: string | null) {
     return "No date";
   }
 
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return formatDateOnlyForDisplay(date).replace(/, \d{4}$/, "");
+  }
+
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric"
@@ -97,11 +103,11 @@ function formatFullDate(date: string | null | undefined) {
     return "No date";
   }
 
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric"
-  }).format(new Date(date));
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return formatDateOnlyForDisplay(date);
+  }
+
+  return formatTimestampForDisplay(date);
 }
 
 function getTimelineMeta(type: PaymentHistoryType) {
@@ -185,6 +191,7 @@ export default function LoanDetailScreen() {
 
   const matchedSelectedLoan = selectedLoan?.id === loanId ? selectedLoan : null;
   const isArchivedLoan = matchedSelectedLoan?.status === "closed" || matchedSelectedLoan?.status === "archived";
+  const activeMatchedLoan = matchedSelectedLoan?.status === "active" ? matchedSelectedLoan : null;
   const shouldUseMockPreview = !matchedSelectedLoan && loanId === "test-loan";
   const displayLoan = matchedSelectedLoan
     ? {
@@ -194,7 +201,9 @@ export default function LoanDetailScreen() {
       statusText: isArchivedLoan
         ? "Closed"
         : selectedPaymentQuote?.amountDue === 0 ? "Covered by credit" : "Payment due",
-      nextDueDate: isArchivedLoan ? formatFullDate(matchedSelectedLoan.closedAt) : matchedSelectedLoan.currentDueDate,
+      nextDueDate: isArchivedLoan
+        ? formatFullDate(matchedSelectedLoan.closedAt)
+        : formatDateOnlyForDisplay(matchedSelectedLoan.currentDueDate),
       nextDueLabel: isArchivedLoan ? "Closed date" : "Next due",
       paymentCycle: formatPaymentCycle(matchedSelectedLoan.paymentCycle),
       urgency: isArchivedLoan || selectedPaymentQuote?.amountDue === 0 ? "healthy" as const : "soon" as const,
@@ -209,8 +218,12 @@ export default function LoanDetailScreen() {
       : null;
 
   const timelineEvents = useMemo(() => {
-    if (selectedPaymentHistories.length === 0) {
+    if (!matchedSelectedLoan) {
       return shouldUseMockPreview ? mockTimeline : [];
+    }
+
+    if (selectedPaymentHistories.length === 0) {
+      return [];
     }
 
     return selectedPaymentHistories.map((history) => {
@@ -224,10 +237,15 @@ export default function LoanDetailScreen() {
         date: formatPaymentDate(history.paymentDate ?? history.createdAt)
       };
     });
-  }, [selectedPaymentHistories, shouldUseMockPreview]);
+  }, [matchedSelectedLoan, selectedPaymentHistories, shouldUseMockPreview]);
 
   const amountDueText = formatCurrency(displayLoan?.amountDue ?? 0);
   function openPaymentModal() {
+    if (!activeMatchedLoan) {
+      setPaymentError("Load an active database loan before receiving payment.");
+      return;
+    }
+
     clearError();
     setPaymentError(null);
     setPaymentAmount("");
@@ -235,25 +253,41 @@ export default function LoanDetailScreen() {
     setIsPaymentModalVisible(true);
   }
 
+  function closePaymentModal() {
+    if (isSubmittingPayment) {
+      return;
+    }
+
+    setIsPaymentModalVisible(false);
+  }
+
   async function useFullPaymentAmount() {
-    if (!selectedLoan) {
-      setPaymentError("Load a database loan before receiving payment.");
+    if (isSubmittingPayment) {
+      return;
+    }
+
+    if (!activeMatchedLoan) {
+      setPaymentError("Load an active database loan before receiving payment.");
       return;
     }
 
     try {
-      const quote = await getPaymentQuote(selectedLoan.id);
+      const quote = await getPaymentQuote(activeMatchedLoan.id);
       setPaymentAmount(String(quote.amountDue));
     } catch (quoteError) {
-      setPaymentError(quoteError instanceof Error ? quoteError.message : "Could not load payment amount.");
+      setPaymentError(getReadableErrorMessage(quoteError, "Could not load payment amount."));
     }
   }
 
   async function submitPayment() {
+    if (isSubmittingPayment) {
+      return;
+    }
+
     const parsedAmount = Number(paymentAmount);
 
-    if (!selectedLoan) {
-      setPaymentError("Load a database loan before receiving payment.");
+    if (!activeMatchedLoan) {
+      setPaymentError("Load an active database loan before receiving payment.");
       return;
     }
 
@@ -266,72 +300,77 @@ export default function LoanDetailScreen() {
       setPaymentError(null);
       setIsSubmittingPayment(true);
       await receivePayment({
-        loanId: selectedLoan.id,
+        loanId: activeMatchedLoan.id,
         paidAmount: parsedAmount,
         note: paymentNote
       });
-      await loadLoanDetail(selectedLoan.id);
+      await loadLoanDetail(activeMatchedLoan.id);
       setIsPaymentModalVisible(false);
       setPaymentAmount("");
       setPaymentNote("");
     } catch (paymentSubmitError) {
-      setPaymentError(
-        paymentSubmitError instanceof Error
-          ? paymentSubmitError.message
-          : "Payment could not be saved."
-      );
+      setPaymentError(getReadableErrorMessage(paymentSubmitError, "Payment could not be saved."));
     } finally {
       setIsSubmittingPayment(false);
     }
   }
 
   async function openCloseModal() {
-    if (!matchedSelectedLoan) {
-      setCloseError("Load a database loan before closing.");
+    if (isClosingLoan) {
+      return;
+    }
+
+    if (!activeMatchedLoan) {
+      setCloseError("Load an active database loan before closing.");
       return;
     }
 
     try {
       setCloseError(null);
       setCloseSettlement(null);
-      const settlement = await getCloseLoanSettlement(matchedSelectedLoan.id);
+      const settlement = await getCloseLoanSettlement(activeMatchedLoan.id);
       setCloseSettlement(settlement);
       setIsCloseModalVisible(true);
     } catch (closeQuoteError) {
-      setCloseError(
-        closeQuoteError instanceof Error
-          ? closeQuoteError.message
-          : "Close settlement could not be loaded."
-      );
+      setCloseError(getReadableErrorMessage(closeQuoteError, "Close settlement could not be loaded."));
     }
   }
 
   async function confirmCloseLoan() {
-    if (!matchedSelectedLoan) {
-      setCloseError("Load a database loan before closing.");
+    if (isClosingLoan) {
+      return;
+    }
+
+    if (!activeMatchedLoan) {
+      setCloseError("Load an active database loan before closing.");
       return;
     }
 
     try {
       setCloseError(null);
       setIsClosingLoan(true);
-      await closeLoanWithSettlement(matchedSelectedLoan.id);
-      await loadLoanDetail(matchedSelectedLoan.id);
+      await closeLoanWithSettlement(activeMatchedLoan.id);
+      await loadLoanDetail(activeMatchedLoan.id);
       setIsCloseModalVisible(false);
       setCloseSettlement(null);
     } catch (closeSubmitError) {
-      setCloseError(
-        closeSubmitError instanceof Error
-          ? closeSubmitError.message
-          : "Loan could not be closed."
-      );
+      setCloseError(getReadableErrorMessage(closeSubmitError, "Loan could not be closed."));
     } finally {
       setIsClosingLoan(false);
     }
   }
 
+  function closeCloseModal() {
+    if (isClosingLoan) {
+      return;
+    }
+
+    setIsCloseModalVisible(false);
+    setCloseSettlement(null);
+  }
+
   function openDeleteModal() {
-    if (!matchedSelectedLoan || matchedSelectedLoan.status !== "active") {
+    if (!activeMatchedLoan) {
       setDeleteError("Only active loans can be deleted.");
       return;
     }
@@ -350,23 +389,23 @@ export default function LoanDetailScreen() {
   }
 
   async function confirmDeleteLoan() {
-    if (!matchedSelectedLoan) {
-      setDeleteError("Load a database loan before deleting.");
+    if (isDeletingLoan) {
+      return;
+    }
+
+    if (!activeMatchedLoan) {
+      setDeleteError("Load an active database loan before deleting.");
       return;
     }
 
     try {
       setDeleteError(null);
       setIsDeletingLoan(true);
-      await deleteLoan(matchedSelectedLoan.id);
+      await deleteLoan(activeMatchedLoan.id);
       setIsDeleteModalVisible(false);
       router.replace("/");
     } catch (deleteSubmitError) {
-      setDeleteError(
-        deleteSubmitError instanceof Error
-          ? deleteSubmitError.message
-          : "Loan could not be deleted."
-      );
+      setDeleteError(getReadableErrorMessage(deleteSubmitError, "Loan could not be deleted."));
     } finally {
       setIsDeletingLoan(false);
     }
@@ -399,7 +438,11 @@ export default function LoanDetailScreen() {
                 ? "Loading this borrower from local storage."
                 : "This loan could not be found on this device."}
             </Text>
-            {error ? <Text className="mt-4 text-[13px] text-danger">{error}</Text> : null}
+            {error ? (
+              <Text className="mt-4 text-[13px] text-danger">
+                {getReadableErrorText(error, "Loan could not be loaded. Please try again.")}
+              </Text>
+            ) : null}
           </View>
         ) : (
           <>
@@ -495,7 +538,7 @@ export default function LoanDetailScreen() {
           <View className="gap-1">
             <Text className="text-[24px] font-semibold text-white">Quick actions</Text>
             <Text className="text-[13px] text-muted">
-              {selectedLoan ? "Payment actions" : "Create or load a database loan to save payment"}
+              {activeMatchedLoan ? "Payment actions" : "Load an active database loan to save payment"}
             </Text>
           </View>
 
@@ -504,18 +547,19 @@ export default function LoanDetailScreen() {
               label="Receive Interest"
               icon="cash-outline"
               tone="primary"
+              disabled={!activeMatchedLoan}
               onPress={openPaymentModal}
             />
             <QuickActionButton disabled label="Reschedule" icon="calendar-outline" tone="neutral" />
             <QuickActionButton
-              disabled={!matchedSelectedLoan || matchedSelectedLoan.status !== "active"}
+              disabled={!activeMatchedLoan}
               label="Close Loan"
               icon="lock-closed-outline"
               tone="danger"
               onPress={openCloseModal}
             />
           </View>
-          {matchedSelectedLoan?.status === "active" ? (
+          {activeMatchedLoan ? (
             <Pressable
               accessibilityRole="button"
               onPress={openDeleteModal}
@@ -525,7 +569,11 @@ export default function LoanDetailScreen() {
             </Pressable>
           ) : null}
           {closeError ? <Text className="text-[13px] text-danger">{closeError}</Text> : null}
-          {error ? <Text className="text-[13px] text-danger">{error}</Text> : null}
+          {error ? (
+            <Text className="text-[13px] text-danger">
+              {getReadableErrorText(error, "Loan action could not be completed. Please try again.")}
+            </Text>
+          ) : null}
         </Animated.View>
         ) : (
           <Animated.View entering={FadeInUp.delay(300).duration(360)}>
@@ -541,7 +589,7 @@ export default function LoanDetailScreen() {
         )}
       </ScrollView>
 
-      {displayLoan && !isArchivedLoan ? (
+      {displayLoan && activeMatchedLoan ? (
         <ReceivePaymentModal
           amount={paymentAmount}
           amountDue={amountDueText}
@@ -551,7 +599,7 @@ export default function LoanDetailScreen() {
           note={paymentNote}
           visible={isPaymentModalVisible}
           onAmountChange={setPaymentAmount}
-          onClose={() => setIsPaymentModalVisible(false)}
+          onClose={closePaymentModal}
           onNoteChange={setPaymentNote}
           onSubmit={submitPayment}
           onUseFullAmount={useFullPaymentAmount}
@@ -563,10 +611,7 @@ export default function LoanDetailScreen() {
         isSubmitting={isClosingLoan}
         settlement={closeSettlement}
         visible={isCloseModalVisible}
-        onClose={() => {
-          setIsCloseModalVisible(false);
-          setCloseSettlement(null);
-        }}
+        onClose={closeCloseModal}
         onConfirm={confirmCloseLoan}
       />
       <DeleteLoanModal

@@ -10,6 +10,7 @@ import {
 } from "react-native";
 
 import type { PaymentCycle } from "@/types/loan";
+import { formatLocalDateOnly } from "@/utils/dateOnly";
 
 type AddLoanModalProps = {
   visible: boolean;
@@ -218,7 +219,7 @@ function addDateOffset(date: Date, daysToAdd: number, monthsToAdd: number) {
 }
 
 function formatIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return formatLocalDateOnly(date);
 }
 
 type LabeledInputProps = {
