@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import { replaceAllDataFromBackup } from "@/database/backupRepository";
 import { initializeDatabase } from "@/database/database";
 import {
   closeLoan as closeLoanInRepository,
@@ -22,6 +23,8 @@ import {
   createBackupPayload,
   exportJsonBackup,
   exportLoansCsv,
+  validateBackupPayload,
+  type BackupPayload,
   type BackupExportResult
 } from "@/services/backupService";
 import {
@@ -93,6 +96,7 @@ type LoanState = {
   exportBackupJson: () => Promise<BackupExportResult>;
   receivePayment: (input: ReceivePaymentInput) => Promise<ReceivePaymentResult>;
   rescheduleLoan: (input: RescheduleLoanInput) => Promise<RescheduleLoanResult>;
+  restoreBackup: (payload: BackupPayload) => Promise<void>;
   clearError: () => void;
 };
 
@@ -598,6 +602,24 @@ export const useLoanStore = create<LoanState>((set) => ({
     }
 
     return result;
+  },
+
+  restoreBackup: async (payload) => {
+    await runStoreAction(set, async () => {
+      const validatedPayload = validateBackupPayload(payload);
+
+      await replaceAllDataFromBackup(validatedPayload);
+
+      const loans = await loadLoansFromRepositories();
+
+      set({
+        ...loans,
+        selectedLoan: null,
+        selectedPaymentHistories: [],
+        selectedPaymentQuote: null,
+        isInitialized: true
+      });
+    });
   },
 
   clearError: () => set({ error: null })

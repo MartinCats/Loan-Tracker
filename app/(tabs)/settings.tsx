@@ -1,14 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as DocumentPicker from "expo-document-picker";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { RestoreBackupModal } from "@/components/settings/RestoreBackupModal";
 import { PressableScale } from "@/components/ui/PressableScale";
+import { BackupValidationError, readBackupJsonFile, type BackupPayload } from "@/services/backupService";
 import { t } from "@/services/i18n";
 import { useLoanStore } from "@/store/loanStore";
 import { useSettingsStore } from "@/store/settingsStore";
-import { impactLight, notifyError, notifySuccess } from "@/utils/haptics";
+import { impactLight, notifyError, notifySuccess, notifyWarning } from "@/utils/haptics";
 import { getReadableErrorMessage } from "@/utils/readableError";
 import { getTabScreenInsets } from "@/utils/screenSpacing";
 import { registerTabScrollHandler } from "@/utils/tabScrollRegistry";
@@ -20,13 +23,17 @@ export default function SettingsScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const {
     exportBackupCsv,
-    exportBackupJson
+    exportBackupJson,
+    restoreBackup
   } = useLoanStore();
   const language = useSettingsStore((state) => state.language);
   const setLanguage = useSettingsStore((state) => state.setLanguage);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [exportingType, setExportingType] = useState<ExportType | null>(null);
+  const [pendingRestorePayload, setPendingRestorePayload] = useState<BackupPayload | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   useEffect(() => {
     return registerTabScrollHandler("settings", () => {
@@ -54,6 +61,69 @@ export default function SettingsScreen() {
       setExportError(getReadableErrorMessage(error, t("settings.exportError")));
     } finally {
       setExportingType(null);
+    }
+  }
+
+  async function pickRestoreBackup() {
+    if (isRestoring) {
+      return;
+    }
+
+    try {
+      impactLight();
+      setRestoreError(null);
+      setExportStatus(null);
+      const result = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: "application/json"
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const asset = result.assets[0];
+
+      if (!asset?.uri) {
+        throw new BackupValidationError("invalid");
+      }
+
+      const payload = await readBackupJsonFile(asset.uri);
+
+      notifyWarning();
+      setPendingRestorePayload(payload);
+    } catch (error) {
+      notifyError();
+      setRestoreError(getBackupErrorMessage(error));
+    }
+  }
+
+  function closeRestoreModal() {
+    if (isRestoring) {
+      return;
+    }
+
+    setPendingRestorePayload(null);
+  }
+
+  async function confirmRestoreBackup() {
+    if (isRestoring || !pendingRestorePayload) {
+      return;
+    }
+
+    try {
+      setIsRestoring(true);
+      setRestoreError(null);
+      await restoreBackup(pendingRestorePayload);
+      setPendingRestorePayload(null);
+      setExportStatus(t("settings.restoreSuccess"));
+      notifySuccess();
+    } catch (error) {
+      notifyError();
+      setRestoreError(getBackupErrorMessage(error));
+    } finally {
+      setIsRestoring(false);
     }
   }
 
@@ -144,14 +214,19 @@ export default function SettingsScreen() {
               label={t("settings.exportCsv")}
               onPress={() => exportData("csv")}
             />
-            <View className="rounded-[18px] border border-white/10 bg-white/5 p-4">
-              <Text className="text-[13px] font-semibold text-muted">{t("settings.restoreBackup")}</Text>
-              <Text className="mt-1 text-[13px] leading-5 text-mutedSoft">
-                {t("settings.restoreBackupDescription")}
-              </Text>
-            </View>
+            <ExportButton
+              description={t("settings.restoreBackupDescription")}
+              disabled={exportingType !== null || isRestoring}
+              icon="cloud-upload-outline"
+              isLoading={isRestoring}
+              label={t("settings.restoreBackup")}
+              loadingLabel={t("settings.restoring")}
+              onPress={pickRestoreBackup}
+            />
             {exportStatus ? <Text className="text-[13px] leading-5 text-mint">{exportStatus}</Text> : null}
-            {exportError ? <Text className="text-[13px] leading-5 text-danger">{exportError}</Text> : null}
+            {exportError || restoreError ? (
+              <Text className="text-[13px] leading-5 text-danger">{exportError ?? restoreError}</Text>
+            ) : null}
           </SettingsSection>
         </Animated.View>
 
@@ -180,6 +255,13 @@ export default function SettingsScreen() {
           </SettingsSection>
         </Animated.View>
       </ScrollView>
+      <RestoreBackupModal
+        error={restoreError}
+        isSubmitting={isRestoring}
+        visible={pendingRestorePayload !== null}
+        onClose={closeRestoreModal}
+        onConfirm={confirmRestoreBackup}
+      />
     </View>
   );
 }
@@ -236,6 +318,7 @@ function ExportButton({
   icon,
   isLoading,
   label,
+  loadingLabel,
   onPress
 }: {
   description: string;
@@ -243,6 +326,7 @@ function ExportButton({
   icon: React.ComponentProps<typeof Ionicons>["name"];
   isLoading: boolean;
   label: string;
+  loadingLabel?: string;
   onPress: () => void;
 }) {
   return (
@@ -264,7 +348,7 @@ function ExportButton({
       </View>
       <View className="min-w-0 flex-1">
         <Text className="text-[15px] font-semibold text-white">
-          {isLoading ? t("settings.preparing") : label}
+          {isLoading ? loadingLabel ?? t("settings.preparing") : label}
         </Text>
         <Text className="mt-1 text-[12px] leading-5 text-muted">
           {description}
@@ -273,6 +357,22 @@ function ExportButton({
       {isLoading ? <ActivityIndicator color="#8EE6C1" size="small" /> : null}
     </PressableScale>
   );
+}
+
+function getBackupErrorMessage(error: unknown) {
+  if (error instanceof BackupValidationError) {
+    if (error.reason === "unsupported") {
+      return t("settings.unsupportedBackupVersion");
+    }
+
+    if (error.reason === "corrupted") {
+      return t("settings.corruptedBackup");
+    }
+
+    return t("settings.invalidBackupFile");
+  }
+
+  return getReadableErrorMessage(error, t("settings.restoreFailed"));
 }
 
 function LanguageButton({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
