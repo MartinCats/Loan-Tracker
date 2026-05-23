@@ -1,10 +1,11 @@
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CloseLoanModal } from "@/components/loan/CloseLoanModal";
+import { DeleteLoanModal } from "@/components/loan/DeleteLoanModal";
 import { LoanHeroCard } from "@/components/loan/LoanHeroCard";
 import { LoanOverviewCard } from "@/components/loan/LoanOverviewCard";
 import { QuickActionButton } from "@/components/loan/QuickActionButton";
@@ -140,6 +141,7 @@ function getTimelineMeta(type: PaymentHistoryType) {
 }
 
 export default function LoanDetailScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const loanId = id ?? "";
@@ -153,6 +155,7 @@ export default function LoanDetailScreen() {
     getPaymentQuote,
     loadLoanDetail,
     closeLoanWithSettlement,
+    deleteLoan,
     receivePayment
   } = useLoanStore();
   const [isPaymentModalVisible, setIsPaymentModalVisible] = useState(false);
@@ -164,6 +167,9 @@ export default function LoanDetailScreen() {
   const [closeSettlement, setCloseSettlement] = useState<CloseLoanSettlementResult | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [isClosingLoan, setIsClosingLoan] = useState(false);
+  const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeletingLoan, setIsDeletingLoan] = useState(false);
   const [isLoadingLoanDetail, setIsLoadingLoanDetail] = useState(false);
 
   useEffect(() => {
@@ -324,6 +330,48 @@ export default function LoanDetailScreen() {
     }
   }
 
+  function openDeleteModal() {
+    if (!matchedSelectedLoan || matchedSelectedLoan.status !== "active") {
+      setDeleteError("Only active loans can be deleted.");
+      return;
+    }
+
+    setDeleteError(null);
+    setIsDeleteModalVisible(true);
+  }
+
+  function closeDeleteModal() {
+    if (isDeletingLoan) {
+      return;
+    }
+
+    setIsDeleteModalVisible(false);
+    setDeleteError(null);
+  }
+
+  async function confirmDeleteLoan() {
+    if (!matchedSelectedLoan) {
+      setDeleteError("Load a database loan before deleting.");
+      return;
+    }
+
+    try {
+      setDeleteError(null);
+      setIsDeletingLoan(true);
+      await deleteLoan(matchedSelectedLoan.id);
+      setIsDeleteModalVisible(false);
+      router.replace("/");
+    } catch (deleteSubmitError) {
+      setDeleteError(
+        deleteSubmitError instanceof Error
+          ? deleteSubmitError.message
+          : "Loan could not be deleted."
+      );
+    } finally {
+      setIsDeletingLoan(false);
+    }
+  }
+
   return (
     <View className="flex-1 bg-background">
       <Stack.Screen options={{ headerShown: false }} />
@@ -467,6 +515,15 @@ export default function LoanDetailScreen() {
               onPress={openCloseModal}
             />
           </View>
+          {matchedSelectedLoan?.status === "active" ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={openDeleteModal}
+              className="self-start rounded-full border border-danger/20 bg-danger/10 px-4 py-2.5 active:opacity-80"
+            >
+              <Text className="text-[13px] font-semibold text-danger">Delete mistaken loan</Text>
+            </Pressable>
+          ) : null}
           {closeError ? <Text className="text-[13px] text-danger">{closeError}</Text> : null}
           {error ? <Text className="text-[13px] text-danger">{error}</Text> : null}
         </Animated.View>
@@ -511,6 +568,14 @@ export default function LoanDetailScreen() {
           setCloseSettlement(null);
         }}
         onConfirm={confirmCloseLoan}
+      />
+      <DeleteLoanModal
+        borrowerName={matchedSelectedLoan?.borrowerName}
+        error={deleteError}
+        isSubmitting={isDeletingLoan}
+        visible={isDeleteModalVisible}
+        onClose={closeDeleteModal}
+        onConfirm={confirmDeleteLoan}
       />
     </View>
   );

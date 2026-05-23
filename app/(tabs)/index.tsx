@@ -1,3 +1,4 @@
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
@@ -8,7 +9,8 @@ import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { LoanFocusCard } from "@/components/dashboard/LoanFocusCard";
 import { SummaryCard } from "@/components/dashboard/SummaryCard";
 import { AddLoanModal } from "@/components/loan/AddLoanModal";
-import { getLoanUrgencyStatus, type LoanUrgencyStatus } from "@/services/loanCalculator";
+import { DeleteLoanModal } from "@/components/loan/DeleteLoanModal";
+import { getLoanCountdownDisplay, type LoanCountdownDisplay } from "@/services/loanCalculator";
 import { useLoanStore } from "@/store/loanStore";
 import type { Loan, PaymentCycle } from "@/types/loan";
 import { registerTabScrollHandler } from "@/utils/tabScrollRegistry";
@@ -19,8 +21,7 @@ type DashboardLoan = {
   principal: number;
   dueDate: string;
   paymentCycle: string;
-  urgency: LoanUrgencyStatus;
-  countdownText: string;
+  countdown: LoanCountdownDisplay;
 };
 
 function formatCurrency(amount: number) {
@@ -43,23 +44,7 @@ function formatDueDate(date: string) {
   }).format(new Date(date));
 }
 
-function getCountdownText(status: LoanUrgencyStatus) {
-  if (status === "overdue") {
-    return "Overdue";
-  }
-
-  if (status === "due_today") {
-    return "Due today";
-  }
-
-  if (status === "due_soon") {
-    return "Due soon";
-  }
-
-  return "Upcoming";
-}
-
-function getCardUrgency(status: LoanUrgencyStatus) {
+function getCardUrgency(status: LoanCountdownDisplay["status"]) {
   if (status === "due_today") {
     return "today";
   }
@@ -72,13 +57,13 @@ function getCardUrgency(status: LoanUrgencyStatus) {
 }
 
 function compareLoanUrgency(a: DashboardLoan, b: DashboardLoan) {
-  const rank: Record<LoanUrgencyStatus, number> = {
+  const rank: Record<LoanCountdownDisplay["status"], number> = {
     overdue: 0,
     due_today: 1,
     due_soon: 2,
     upcoming: 3
   };
-  const urgencyDifference = rank[a.urgency] - rank[b.urgency];
+  const urgencyDifference = rank[a.countdown.status] - rank[b.countdown.status];
 
   if (urgencyDifference !== 0) {
     return urgencyDifference;
@@ -88,7 +73,7 @@ function compareLoanUrgency(a: DashboardLoan, b: DashboardLoan) {
 }
 
 function toDashboardLoan(loan: Loan): DashboardLoan {
-  const urgency = getLoanUrgencyStatus(loan.currentDueDate, new Date().toISOString());
+  const countdown = getLoanCountdownDisplay(loan.currentDueDate, new Date().toISOString());
 
   return {
     id: loan.id,
@@ -96,8 +81,7 @@ function toDashboardLoan(loan: Loan): DashboardLoan {
     principal: loan.principal,
     dueDate: loan.currentDueDate,
     paymentCycle: formatPaymentCycle(loan.paymentCycle),
-    urgency,
-    countdownText: getCountdownText(urgency)
+    countdown
   };
 }
 
@@ -108,6 +92,7 @@ export default function DashboardScreen() {
   const {
     activeLoans,
     createLoan,
+    deleteLoan,
     error,
     isLoading,
     loadActiveLoans
@@ -120,6 +105,9 @@ export default function DashboardScreen() {
   const [firstDueDate, setFirstDueDate] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isCreatingLoan, setIsCreatingLoan] = useState(false);
+  const [deleteTargetLoan, setDeleteTargetLoan] = useState<DashboardLoan | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeletingLoan, setIsDeletingLoan] = useState(false);
 
   useEffect(() => {
     loadActiveLoans().catch(() => {
@@ -225,6 +213,44 @@ export default function DashboardScreen() {
     }
   }
 
+  function openDeleteLoan(loan: DashboardLoan) {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {
+      // Haptics are best-effort and should never block the destructive confirmation flow.
+    });
+    setDeleteError(null);
+    setDeleteTargetLoan(loan);
+  }
+
+  function closeDeleteLoan() {
+    if (isDeletingLoan) {
+      return;
+    }
+
+    setDeleteTargetLoan(null);
+    setDeleteError(null);
+  }
+
+  async function confirmDeleteLoan() {
+    if (!deleteTargetLoan) {
+      return;
+    }
+
+    try {
+      setIsDeletingLoan(true);
+      setDeleteError(null);
+      await deleteLoan(deleteTargetLoan.id);
+      setDeleteTargetLoan(null);
+    } catch (deleteSubmitError) {
+      setDeleteError(
+        deleteSubmitError instanceof Error
+          ? deleteSubmitError.message
+          : "Loan could not be deleted."
+      );
+    } finally {
+      setIsDeletingLoan(false);
+    }
+  }
+
   return (
     <View className="flex-1 bg-background">
       <View className="absolute left-0 right-0 top-0 h-72 bg-auraPurple opacity-30" />
@@ -307,16 +333,20 @@ export default function DashboardScreen() {
                 >
                   <Pressable
                     accessibilityRole="button"
+                    delayLongPress={360}
+                    onLongPress={() => openDeleteLoan(loan)}
                     onPress={() => router.push(`/loan/${encodeURIComponent(loan.id)}`)}
                   >
                     <LoanFocusCard
                       borrowerName={loan.borrowerName}
                       amountDue={formatCurrency(loan.principal)}
                       amountLabel="Principal"
-                      countdownText={loan.countdownText}
+                      countdownValue={loan.countdown.value}
+                      countdownLabel={loan.countdown.label}
+                      countdownAccessibilityLabel={loan.countdown.accessibilityLabel}
                       dueDate={formatDueDate(loan.dueDate)}
                       paymentCycle={loan.paymentCycle}
-                      urgency={getCardUrgency(loan.urgency)}
+                      urgency={getCardUrgency(loan.countdown.status)}
                     />
                   </Pressable>
                 </Animated.View>
@@ -359,6 +389,14 @@ export default function DashboardScreen() {
         onPaymentCycleChange={setPaymentCycle}
         onPrincipalChange={setPrincipal}
         onSubmit={submitAddLoan}
+      />
+      <DeleteLoanModal
+        borrowerName={deleteTargetLoan?.borrowerName}
+        error={deleteError}
+        isSubmitting={isDeletingLoan}
+        visible={deleteTargetLoan !== null}
+        onClose={closeDeleteLoan}
+        onConfirm={confirmDeleteLoan}
       />
     </View>
   );

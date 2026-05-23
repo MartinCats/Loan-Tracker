@@ -6,7 +6,9 @@ type LoanFocusCardProps = {
   borrowerName: string;
   amountDue: string;
   amountLabel?: string;
-  countdownText: string;
+  countdownValue: string;
+  countdownLabel: string;
+  countdownAccessibilityLabel: string;
   dueDate: string;
   paymentCycle: string;
   urgency: Urgency;
@@ -47,7 +49,9 @@ export function LoanFocusCard({
   borrowerName,
   amountDue,
   amountLabel = "Amount due",
-  countdownText,
+  countdownValue,
+  countdownLabel,
+  countdownAccessibilityLabel,
   dueDate,
   paymentCycle,
   urgency
@@ -58,13 +62,30 @@ export function LoanFocusCard({
     <View className={`overflow-hidden rounded-[24px] border bg-surface/90 p-5 shadow-lg ${styles.shell}`}>
       <View className={`absolute left-0 top-5 h-16 w-0.5 rounded-full ${styles.rail} opacity-45`} />
       <View className={`absolute left-0 right-0 top-0 h-10 ${styles.rail} opacity-5`} />
-      <View className="flex-row items-start justify-between gap-3">
-        <View className="flex-1 gap-1">
-          <Text className="text-[18px] font-semibold leading-6 text-white">{borrowerName}</Text>
+      <View className="flex-row items-start gap-4">
+        <View className="min-w-0 flex-1 gap-1">
+          <Text numberOfLines={1} className="text-[18px] font-semibold leading-6 text-white">
+            {borrowerName}
+          </Text>
           <Text className="text-[13px] text-mutedSoft">{paymentCycle}</Text>
         </View>
-        <View className={`rounded-full px-3 py-1 ${styles.pill}`}>
-          <Text className={`text-[12px] font-semibold ${styles.text}`}>{countdownText}</Text>
+        <View
+          accessibilityLabel={countdownAccessibilityLabel}
+          className={`min-h-[74px] min-w-[78px] items-center justify-center rounded-[22px] px-3 py-3 ${styles.pill}`}
+        >
+          <Text
+            adjustsFontSizeToFit
+            numberOfLines={1}
+            className={`text-center text-[22px] font-semibold leading-7 ${styles.text}`}
+          >
+            {countdownValue}
+          </Text>
+          <Text
+            numberOfLines={2}
+            className={`mt-0.5 text-center text-[10px] font-semibold uppercase leading-3 ${styles.text} opacity-75`}
+          >
+            {countdownLabel}
+          </Text>
         </View>
       </View>
 

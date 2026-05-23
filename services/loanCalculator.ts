@@ -2,6 +2,14 @@ import type { PaymentCycle } from "@/types/loan";
 
 export type LoanUrgencyStatus = "overdue" | "due_today" | "due_soon" | "upcoming";
 
+export type LoanCountdownDisplay = {
+  status: LoanUrgencyStatus;
+  daysUntilDue: number;
+  value: string;
+  label: string;
+  accessibilityLabel: string;
+};
+
 export type AmountDueInput = {
   expectedInterest: number;
   unpaidInterest: number;
@@ -106,9 +114,7 @@ export function getLoanUrgencyStatus(
   dueDate: string | Date,
   today: string | Date
 ): LoanUrgencyStatus {
-  const due = toDateOnly(dueDate);
-  const current = toDateOnly(today);
-  const daysUntilDue = Math.floor((due.getTime() - current.getTime()) / millisecondsPerDay);
+  const daysUntilDue = getDaysUntilDue(dueDate, today);
 
   if (daysUntilDue < 0) {
     return "overdue";
@@ -123,6 +129,51 @@ export function getLoanUrgencyStatus(
   }
 
   return "upcoming";
+}
+
+export function getLoanCountdownDisplay(
+  dueDate: string | Date,
+  today: string | Date
+): LoanCountdownDisplay {
+  const daysUntilDue = getDaysUntilDue(dueDate, today);
+  const status = getLoanUrgencyStatus(dueDate, today);
+
+  if (daysUntilDue < 0) {
+    const overdueDays = Math.abs(daysUntilDue);
+
+    return {
+      status,
+      daysUntilDue,
+      value: String(overdueDays),
+      label: overdueDays === 1 ? "day overdue" : "days overdue",
+      accessibilityLabel: overdueDays === 1 ? "1 day overdue" : `${overdueDays} days overdue`
+    };
+  }
+
+  if (daysUntilDue === 0) {
+    return {
+      status,
+      daysUntilDue,
+      value: "TODAY",
+      label: "due",
+      accessibilityLabel: "Due today"
+    };
+  }
+
+  return {
+    status,
+    daysUntilDue,
+    value: String(daysUntilDue),
+    label: daysUntilDue === 1 ? "day left" : "days left",
+    accessibilityLabel: daysUntilDue === 1 ? "1 day left" : `${daysUntilDue} days left`
+  };
+}
+
+export function getDaysUntilDue(dueDate: string | Date, today: string | Date) {
+  const due = toDateOnly(dueDate);
+  const current = toDateOnly(today);
+
+  return Math.floor((due.getTime() - current.getTime()) / millisecondsPerDay);
 }
 
 export function applyPaymentToLoan({

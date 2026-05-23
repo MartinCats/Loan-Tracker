@@ -14,6 +14,7 @@ import {
 } from "@/database/loanRepository";
 import {
   createPaymentHistory,
+  deletePaymentHistoriesByLoanId,
   getPaymentHistoriesByLoanId
 } from "@/database/paymentHistoryRepository";
 import {
@@ -325,12 +326,26 @@ export const useLoanStore = create<LoanState>((set) => ({
 
   deleteLoan: async (id) => {
     await runStoreAction(set, async () => {
+      const loan = await getLoanById(id);
+
+      if (!loan) {
+        throw new Error(`Loan not found: ${id}`);
+      }
+
+      if (loan.status !== "active") {
+        throw new Error("Only active loans can be deleted.");
+      }
+
+      await deletePaymentHistoriesByLoanId(id);
       await deleteLoanInRepository(id);
 
       const loans = await loadLoansFromRepositories();
 
       set({
         ...loans,
+        selectedLoan: null,
+        selectedPaymentHistories: [],
+        selectedPaymentQuote: null,
         isInitialized: true
       });
     });
