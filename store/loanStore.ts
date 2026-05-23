@@ -15,8 +15,15 @@ import {
 import {
   createPaymentHistory,
   deletePaymentHistoriesByLoanId,
+  getAllPaymentHistories,
   getPaymentHistoriesByLoanId
 } from "@/database/paymentHistoryRepository";
+import {
+  createBackupPayload,
+  exportJsonBackup,
+  exportLoansCsv,
+  type BackupExportResult
+} from "@/services/backupService";
 import {
   applyPaymentToLoan,
   calculateAmountDue,
@@ -70,6 +77,8 @@ type LoanState = {
   closeLoanWithSettlement: (loanId: string) => Promise<CloseLoanWithSettlementResult>;
   deleteArchivedLoan: (id: string) => Promise<void>;
   deleteLoan: (id: string) => Promise<void>;
+  exportBackupCsv: () => Promise<BackupExportResult>;
+  exportBackupJson: () => Promise<BackupExportResult>;
   receivePayment: (input: ReceivePaymentInput) => Promise<ReceivePaymentResult>;
   clearError: () => void;
 };
@@ -377,6 +386,54 @@ export const useLoanStore = create<LoanState>((set) => ({
         isInitialized: true
       });
     });
+  },
+
+  exportBackupJson: async () => {
+    let result: BackupExportResult | null = null;
+
+    await runStoreAction(set, async () => {
+      const [loans, paymentHistories] = await Promise.all([
+        loadLoansFromRepositories(),
+        getAllPaymentHistories()
+      ]);
+      const allLoans = [...loans.activeLoans, ...loans.archivedLoans];
+      const payload = createBackupPayload(allLoans, paymentHistories);
+
+      result = await exportJsonBackup(payload);
+
+      set({
+        ...loans,
+        isInitialized: true
+      });
+    });
+
+    if (!result) {
+      throw new Error("JSON backup could not be exported.");
+    }
+
+    return result;
+  },
+
+  exportBackupCsv: async () => {
+    let result: BackupExportResult | null = null;
+
+    await runStoreAction(set, async () => {
+      const loans = await loadLoansFromRepositories();
+      const allLoans = [...loans.activeLoans, ...loans.archivedLoans];
+
+      result = await exportLoansCsv(allLoans);
+
+      set({
+        ...loans,
+        isInitialized: true
+      });
+    });
+
+    if (!result) {
+      throw new Error("CSV backup could not be exported.");
+    }
+
+    return result;
   },
 
   receivePayment: async (input) => {

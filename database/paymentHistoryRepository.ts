@@ -95,6 +95,21 @@ export async function getPaymentHistoriesByLoanId(loanId: string) {
   return rows.map(mapPaymentHistoryRow);
 }
 
+export async function getAllPaymentHistories() {
+  await initializeDatabase();
+
+  const database = await getDatabase();
+  const rows = await database.getAllAsync<PaymentHistoryRow>(
+    `
+      SELECT *
+      FROM payment_histories
+      ORDER BY created_at DESC;
+    `
+  );
+
+  return rows.map(mapPaymentHistoryRow);
+}
+
 export async function deletePaymentHistoriesByLoanId(loanId: string) {
   await initializeDatabase();
 
